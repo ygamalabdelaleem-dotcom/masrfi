@@ -1762,16 +1762,36 @@ function speechText(text) {
     .replace(/(\d),(?=\d{3})/g, '$1').replace(/(\d+)\.00\b/g, '$1').replace(/(\d+)\.(\d)\d?\b/g, (m, a, b) => +b ? m : a)
     .replace(/\bEGP\b/g, 'جنيه').replace(/%/g, ' في المية').replace(/[\u{1F300}-\u{1FAFF}☀-➿️📌•«»]/gu, '').replace(/\s+/g, ' ').trim();
 }
-function speak(text, onEnd) {
+// الآيفون: لازم أول نطق يحصل من لمسة، والـ cancel قبل speak على طول بيضيّع الكلام،
+// وبعد المايك محتاج لحظة عشان الصوت يرجع للسماعة. لو الصوت المختار ماشتغلش بنرجع للصوت الافتراضي.
+let curUtter = null, speechUnlocked = false;
+function unlockSpeech() {
+  if (speechUnlocked || !('speechSynthesis' in window)) return;
+  speechUnlocked = true;
+  try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; u.lang = 'ar-EG'; speechSynthesis.speak(u); } catch (e) { }
+}
+['touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockSpeech, { capture: true, passive: true }));
+function speak(text, onEnd, plain) {
   if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(speechText(text));
-  const list = arVoices();
-  const v = list.find(x => x.voiceURI === db.prefs.voiceURI) || list[0];
-  if (v) u.voice = v;
-  u.lang = v ? v.lang : 'ar-EG'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1;
-  if (onEnd) u.onend = onEnd;
-  speechSynthesis.speak(u);
+  const say = speechText(text); if (!say) return;
+  const busy = speechSynthesis.speaking || speechSynthesis.pending;
+  if (busy) speechSynthesis.cancel();
+  setTimeout(() => {
+    const u = new SpeechSynthesisUtterance(say);
+    const list = arVoices();
+    const v = plain ? null : list.find(x => x.voiceURI === db.prefs.voiceURI) || list[0];
+    if (v) u.voice = v;
+    u.lang = v ? v.lang : 'ar-EG'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1; u.volume = 1;
+    let started = false;
+    u.onstart = () => { started = true; };
+    u.onend = () => { if (curUtter === u) curUtter = null; onEnd && onEnd(); };
+    u.onerror = e => { if (!started && !plain && e.error !== 'interrupted' && e.error !== 'canceled') speak(text, onEnd, true); };
+    curUtter = u; // لازم نحتفظ بيه وإلا الآيفون ممكن يمسحه قبل ما يخلص
+    speechSynthesis.resume && speechSynthesis.resume();
+    speechSynthesis.speak(u);
+    // لو ماابتداش خلال ثانيتين، نجرب بالصوت الافتراضي
+    if (!plain) setTimeout(() => { if (!started && curUtter === u) { speechSynthesis.cancel(); speak(text, onEnd, true); } }, 2000);
+  }, busy ? 120 : 30);
 }
 function voiceSettingsHtml() {
   const list = arVoices();
@@ -1936,7 +1956,7 @@ function quickVoice() {
     if (!heard.trim()) return;
     const r = handleVoice(heard);
     if (r.silent) return;
-    voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); speak(r.reply);
+    voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); setTimeout(() => speak(r.reply), 350);
   };
   try { vRec.start(); } catch (e) { vRec = null; $('#vfab').classList.remove('on'); openVoice(); }
 }
@@ -1962,7 +1982,7 @@ function openVoice() {
       if (r.silent) return;
       out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '') + (r.go ? `<button class="btn small primary" id="vOpen">افتح ${esc(r.goLabel)}</button>` : '');
       if (r.go) $('#vOpen').onclick = r.go;
-      speak(r.reply);
+      setTimeout(() => speak(r.reply), 250);
       if (r.undoId) $('#vUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== r.undoId); save(); out.innerHTML = insH('alert', 'اتلغت'); };
       $('#vText').value = '';
     };
