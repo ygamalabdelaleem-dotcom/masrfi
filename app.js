@@ -10,9 +10,13 @@ const LABELS = {
   cat_health: 'صحة', cat_fun: 'ترفيه', cat_edu: 'تعليم', cat_telecom: 'اتصالات', cat_clothes: 'ملابس',
   cat_gifts: 'هدايا', cat_travel: 'سفر', cat_family: 'عائلة', cat_cash: 'سحب نقدي', cat_transfer: 'تحويلات',
   cat_other_exp: 'مصروفات أخرى', cat_salary: 'راتب', cat_bonus: 'مكافأة', cat_refund: 'مبالغ مستردة',
-  cat_other_inc: 'إيرادات أخرى', acc_cash: 'نقدي'
+  cat_other_inc: 'إيرادات أخرى', cat_installments: 'أقساط', acc_cash: 'نقدي'
 };
-const ACC_TYPES = { BANK: 'بنك', CASH: 'نقدي', SAVING: 'توفير', GOLD: 'ذهب', WALLET: 'محفظة إلكترونية' };
+const ACC_TYPES = { BANK: 'بنك', CASH: 'نقدي', CREDIT: 'بطاقة ائتمان', SAVING: 'توفير', GOLD: 'ذهب', WALLET: 'محفظة إلكترونية' };
+const ACC_ICONS = { BANK: '🏦', CASH: '💵', CREDIT: '💳', SAVING: '🐷', GOLD: '🪙', WALLET: '📲' };
+// تصنيف المصروفات لقاعدة 50/30/20: احتياجات أساسية أو رغبات
+const NEED_CATS = new Set(['cat_food', 'cat_transport', 'cat_bills', 'cat_rent', 'cat_health', 'cat_edu', 'cat_telecom', 'cat_family', 'cat_installments']);
+const catGroup = c => c.group || (NEED_CATS.has(c.name) ? 'NEED' : 'WANT');
 const PERIODS = { DAILY: 'يومي', WEEKLY: 'أسبوعي', MONTHLY: 'شهري', YEARLY: 'سنوي' };
 const DAY = 86400000;
 
@@ -21,7 +25,7 @@ function seed() {
   const exp = [['cat_food', '🍽️'], ['cat_transport', '🚗'], ['cat_bills', '🧾'], ['cat_rent', '🏠'], ['cat_shopping', '🛒'],
     ['cat_health', '💊'], ['cat_fun', '🎬'], ['cat_edu', '🎓'], ['cat_telecom', '📱'], ['cat_clothes', '👕'],
     ['cat_gifts', '🎁'], ['cat_travel', '✈️'], ['cat_family', '👨‍👩‍👧'], ['cat_cash', '🏧'], ['cat_transfer', '🔁'],
-    ['cat_other_exp', '📦']];
+    ['cat_installments', '💳'], ['cat_other_exp', '📦']];
   const inc = [['cat_salary', '💼'], ['cat_bonus', '🎉'], ['cat_refund', '↩️'], ['cat_other_inc', '💰']];
   let id = 1;
   const categories = [];
@@ -31,12 +35,23 @@ function seed() {
     v: 1, nextId: 1000,
     accounts: [{ id: id++, name: 'acc_cash', type: 'CASH', currency: 'EGP', initialBalance: 0, last4: '', archived: false }],
     categories, txns: [], recurring: [], goals: [], debts: [], merchants: {}, rates: {},
-    prefs: { base: 'EGP', goldOz: 0, ratesUpdated: 0, pinHash: '' }
+    installments: [], inbox: [],
+    prefs: { base: 'EGP', goldOz: 0, ratesUpdated: 0, pinHash: '', reminderTime: '21:00', autoAddSms: false, savingRate: 20 }
   };
+}
+
+// يضيف الحقول الجديدة للبيانات المحفوظة من الإصدار الأول
+function migrate(d) {
+  d.installments = d.installments || [];
+  d.inbox = d.inbox || [];
+  d.prefs = Object.assign({ reminderTime: '21:00', autoAddSms: false, savingRate: 20 }, d.prefs);
+  if (!d.categories.some(c => c.name === 'cat_installments')) d.categories.push({ id: ++d.nextId, name: 'cat_installments', isIncome: false, icon: '💳', monthlyBudget: 0 });
+  return d;
 }
 
 let db;
 try { db = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch (e) { db = seed(); }
+db = migrate(db);
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast('تعذّر الحفظ: ' + e.message); }
 }
@@ -51,6 +66,7 @@ const money = v => (Number(v) || 0).toLocaleString('en-US', { minimumFractionDig
 const pad = n => String(n).padStart(2, '0');
 const fmtDate = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const fmtDT = ms => { const d = new Date(ms); return `${fmtDate(ms)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const ltr = s => '\u2066' + s + '\u2069';
 const toLocalInput = ms => { const d = new Date(ms); return `${fmtDate(ms)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 function normDigits(s) {
   return String(s ?? '').replace(/[٠-٩]/g, c => c.charCodeAt(0) - 0x660)
@@ -338,18 +354,23 @@ let filter = { q: '', type: '', accountId: 0, categoryId: 0, period: 'ALL' };
 let reportPeriod = 'MONTH', reportType = 'EXPENSE';
 const view = () => $('#view');
 
+const SUB_VIEWS = { cards: 'more', savings: 'home', inbox: 'home' };
 function setTab(t) {
   if (t === 'add') { openTxn(); return; }
   tab = t;
-  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  const main = SUB_VIEWS[t] || t;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === main));
   window.scrollTo(0, 0);
   render();
 }
 
 function render() {
-  const titles = { home: 'محفظتي', txns: 'الحركات', reports: 'التقارير', more: 'المزيد' };
+  const titles = { home: 'محفظتي', txns: 'الحركات', reports: 'التقارير', more: 'المزيد', cards: 'بطاقات الائتمان', savings: 'الادخار', inbox: 'رسائل البنك' };
   $('#title').textContent = titles[tab] || 'محفظتي';
-  ({ home: renderHome, txns: renderTxns, reports: renderReports, more: renderMore })[tab]();
+  const back = $('#back');
+  back.classList.toggle('hidden', !SUB_VIEWS[tab]);
+  back.onclick = () => setTab(SUB_VIEWS[tab]);
+  ({ home: renderHome, txns: renderTxns, reports: renderReports, more: renderMore, cards: renderCards, savings: renderSavings, inbox: renderInbox })[tab]();
 }
 
 function txRow(t) {
@@ -360,7 +381,7 @@ function txRow(t) {
   if (t.type === 'TRANSFER') { icon = '🔁'; cls = ''; sign = ''; title = t.merchant || `تحويل إلى ${lbl((acc(t.toAccountId) || {}).name || '')}`; }
   return `<div class="item" data-tx="${t.id}">
     <div class="ico">${icon}</div>
-    <div class="grow"><div class="ellipsis">${esc(title)}</div><div class="muted ellipsis">${esc(lbl(a ? a.name : ''))} · ${fmtDT(t.date)}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
+    <div class="grow"><div class="ellipsis">${esc(title)}</div><div class="muted ellipsis">${esc(lbl(a ? a.name : ''))} · ${ltr(fmtDT(t.date))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
     <div class="num ${cls}">${sign}${money(t.amount)} <small class="muted">${cur}</small></div>
   </div>`;
 }
@@ -393,23 +414,45 @@ function renderHome() {
   });
   const due = db.debts.filter(d => d.dueDate && d.paid < d.amount && d.dueDate - Date.now() < 3 * DAY).length;
   if (due) ins.push(`<div class="insight w">⏰ لديك ${due} دين مستحق قريباً</div>`);
+  db.accounts.filter(a => a.type === 'CREDIT' && !a.archived && a.dueDay).forEach(a => {
+    const owed = -(bal[a.id] || 0); const left = daysUntilDay(a.dueDay);
+    if (owed > 0 && left <= 5) ins.push(`<div class="insight w">💳 موعد سداد ${esc(lbl(a.name))} بعد ${left === 0 ? 'النهارده' : left + ' يوم'}: <b class="num">${money(owed)}</b> ${a.currency}</div>`);
+  });
+  db.installments.forEach(p => {
+    const n = nextInstallment(p);
+    if (n && n.date - Date.now() < 3 * DAY) ins.push(`<div class="insight w">📅 قسط «${esc(p.name)}» مستحق ${ltr(fmtDate(n.date))}: <b class="num">${money(n.payment)}</b></div>`);
+  });
+  const savedPct = inc > 0 ? (inc - exp) / inc * 100 : null;
+  const pending = db.inbox.filter(m => m.status === 'PENDING').length;
+  const todayStart = new Date().setHours(0, 0, 0, 0);
+  const [rh, rm] = (db.prefs.reminderTime || '21:00').split(':').map(Number);
+  const showReminder = db.prefs.reminderTime && new Date().getHours() * 60 + new Date().getMinutes() >= rh * 60 + rm && !db.txns.some(t => t.date >= todayStart);
 
   const recent = [...db.txns].sort((a, b) => b.date - a.date).slice(0, 6);
   const budgets = db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome);
   const gold = goldPrices();
 
   view().innerHTML = `
+    ${showReminder ? `<div class="card reminder"><div class="row"><span style="font-size:26px">⏰</span><div class="grow"><b>ماسجّلتش مصاريف النهارده</b><div class="muted">سجّلها دلوقتي عشان تفضل حساباتك مظبوطة</div></div><button class="btn small primary" id="hRem">إضافة</button></div></div>` : ''}
     <div class="card hero">
-      <div class="muted">إجمالي الرصيد (${base()})</div>
+      <div class="muted">صافي الرصيد (${base()})</div>
       <div class="big">${money(total)}</div>
-      <div class="grid2" style="margin-top:10px">
-        <div><div class="muted">دخل هذا الشهر</div><b class="num">${money(inc)}</b></div>
-        <div><div class="muted">مصروف هذا الشهر</div><b class="num">${money(exp)}</b></div>
+      <div class="hero-stats">
+        <div><span class="muted">⬇️ دخل الشهر</span><b class="num">${money(inc)}</b></div>
+        <div><span class="muted">⬆️ مصروف الشهر</span><b class="num">${money(exp)}</b></div>
+        <div><span class="muted">🐷 نسبة الادخار</span><b class="num">${savedPct == null ? '—' : savedPct.toFixed(0) + '%'}</b></div>
       </div>
+    </div>
+    <div class="quick">
+      <button data-q="exp"><span class="qi red">➖</span>مصروف</button>
+      <button data-q="inc"><span class="qi green">➕</span>دخل</button>
+      <button data-q="sms"><span class="qi blue">✉️</span>رسالة بنك${pending ? `<i class="badge">${pending}</i>` : ''}</button>
+      <button data-q="cards"><span class="qi purple">💳</span>البطاقات</button>
+      <button data-q="savings"><span class="qi amber">🐷</span>الادخار</button>
     </div>
     ${ins.length ? `<div class="card"><h3>🤖 رؤى ذكية</h3>${ins.join('')}</div>` : ''}
     <div class="card"><div class="row between"><h3>الحسابات</h3><button class="btn small" id="hAcc">إدارة</button></div>
-      <div class="list">${db.accounts.filter(a => !a.archived).map(a => `<div class="item"><div class="ico">${{ BANK: '🏦', CASH: '💵', SAVING: '🐷', GOLD: '🪙', WALLET: '📲' }[a.type] || '💳'}</div>
+      <div class="list">${db.accounts.filter(a => !a.archived).map(a => `<div class="item"><div class="ico">${ACC_ICONS[a.type] || '💳'}</div>
       <div class="grow ellipsis">${esc(lbl(a.name))}${a.last4 ? ` <span class="muted">••${esc(a.last4)}</span>` : ''}</div>
       <div class="num">${money(bal[a.id] || 0)} <small class="muted">${a.currency}</small></div></div>`).join('')}</div></div>
     ${budgets.length ? `<div class="card"><h3>الميزانيات</h3>${budgets.map(c => { const s = cats[c.id] || 0; const p = s / c.monthlyBudget * 100;
@@ -426,6 +469,9 @@ function renderHome() {
   `;
   $('#hAcc').onclick = openAccounts;
   $('#hAll').onclick = () => setTab('txns');
+  if ($('#hRem')) $('#hRem').onclick = () => openTxn();
+  const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), sms: () => setTab('inbox'), cards: () => setTab('cards'), savings: () => setTab('savings') };
+  view().querySelectorAll('[data-q]').forEach(b => b.onclick = qa[b.dataset.q]);
   bindTxRows(view());
 }
 
@@ -544,23 +590,391 @@ function askNl(text) {
 }
 
 function renderMore() {
-  const items = [
-    ['🧾', 'لصق رسالة بنك', 'حوّل رسالة SMS من البنك إلى حركة تلقائياً', openSmsPaste],
-    ['🏦', 'الحسابات', 'بنوك، نقدي، توفير، ذهب', openAccounts],
-    ['🏷️', 'التصنيفات والميزانيات', 'تعديل التصنيفات وميزانية كل تصنيف', openCategories],
-    ['🔁', 'المعاملات المتكررة', 'إيجار، اشتراكات، راتب...', openRecurring],
-    ['🤝', 'الديون والقروض', 'أقرضت / اقترضت وسداد جزئي', openDebts],
-    ['🎯', 'الأهداف', 'أهداف الادخار', openGoals],
-    ['🍕', 'تقسيم فاتورة', 'سجّل نصيبك فقط كمصروف', openSplit],
-    ['💱', 'العملة وأسعار الصرف والذهب', `العملة الأساسية: ${base()}`, openRates],
-    ['💾', 'نسخ احتياطي واستعادة', 'حفظ بياناتك في ملف (iCloud Drive أو الملفات)', openBackup],
-    ['📤', 'تصدير الحركات (Excel/CSV)', 'كل الحركات في ملف واحد', exportCsv],
-    ['🔒', 'قفل PIN', db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل', openPin],
-    ['📲', 'التثبيت على الآيفون', 'إضافة التطبيق للشاشة الرئيسية', () => $('#iosHint').classList.remove('hidden')]
+  const groups = [
+    ['الفلوس', [
+      ['🏦', 'الحسابات', 'بنوك، نقدي، توفير، ذهب', openAccounts],
+      ['💳', 'بطاقات الائتمان والتقسيط', 'الحد المستخدم، مواعيد السداد، جدول الأقساط', () => setTab('cards')],
+      ['🐷', 'الادخار', 'قاعدة 50/30/20، صندوق الطوارئ، خطة الأهداف', () => setTab('savings')],
+      ['🎯', 'الأهداف', 'أهداف الادخار', openGoals],
+      ['🤝', 'الديون والقروض', 'أقرضت / اقترضت وسداد جزئي', openDebts]]],
+    ['التنظيم', [
+      ['✉️', 'رسائل البنك', 'لصق أو استيراد الرسائل وربطها تلقائياً', () => setTab('inbox')],
+      ['🏷️', 'التصنيفات والميزانيات', 'ميزانية كل تصنيف ونوعه (احتياج/رغبة)', openCategories],
+      ['🔁', 'المعاملات المتكررة', 'إيجار، اشتراكات، راتب...', openRecurring],
+      ['🍕', 'تقسيم فاتورة', 'سجّل نصيبك فقط كمصروف', openSplit]]],
+    ['البيانات والإعدادات', [
+      ['⚙️', 'الإعدادات', 'التذكير اليومي، الرسائل، ساعة أبل', openSettings],
+      ['💱', 'العملة وأسعار الصرف والذهب', `العملة الأساسية: ${base()}`, openRates],
+      ['💾', 'نسخ احتياطي واستعادة', 'حفظ بياناتك في ملف (iCloud Drive أو الملفات)', openBackup],
+      ['📤', 'تصدير الحركات (Excel/CSV)', 'كل الحركات في ملف واحد', exportCsv],
+      ['🔒', 'قفل PIN', db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل', openPin],
+      ['📲', 'التثبيت على الآيفون', 'إضافة التطبيق للشاشة الرئيسية', () => $('#iosHint').classList.remove('hidden')]]]
   ];
-  view().innerHTML = `<div class="card list menu">${items.map((x, i) => `<div class="item" data-m="${i}"><div class="ico">${x[0]}</div><div class="grow"><div>${x[1]}</div><div class="muted">${x[2]}</div></div><span class="muted">‹</span></div>`).join('')}</div>
-    <p class="muted" style="text-align:center">بياناتك محفوظة على هذا الجهاز فقط ولا تُرسل لأي خادم. خذ نسخة احتياطية بانتظام.</p>`;
+  const items = groups.flatMap(g => g[1]);
+  let n = 0;
+  view().innerHTML = groups.map(([title, list]) => `<div class="section-title">${title}</div><div class="card list menu">${list.map(x => `<div class="item" data-m="${n++}"><div class="ico">${x[0]}</div><div class="grow"><div>${x[1]}</div><div class="muted">${x[2]}</div></div><span class="muted">‹</span></div>`).join('')}</div>`).join('') +
+    `<p class="muted" style="text-align:center">بياناتك محفوظة على هذا الجهاز فقط ولا تُرسل لأي خادم. خذ نسخة احتياطية بانتظام.</p>`;
   view().querySelectorAll('[data-m]').forEach(el => el.onclick = () => items[+el.dataset.m][3]());
+}
+
+// ================= بطاقات الائتمان والتقسيط =================
+function daysUntilDay(day) {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  let d = new Date(now.getFullYear(), now.getMonth(), Math.min(day, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()));
+  if (d < now) d = new Date(now.getFullYear(), now.getMonth() + 1, Math.min(day, new Date(now.getFullYear(), now.getMonth() + 2, 0).getDate()));
+  return Math.round((d - now) / DAY);
+}
+// جدول السداد: FLAT = فائدة ثابتة على أصل المبلغ (الشائع في مصر)، REDUCING = فائدة على الرصيد المتبقي
+function schedule(p) {
+  const n = Math.max(1, p.months | 0), P = +p.principal || 0, annual = (+p.rate || 0) / 100, fees = +p.fees || 0;
+  const rows = [];
+  const start = new Date(p.startDate);
+  const dateOf = i => { const y = start.getFullYear(), m = start.getMonth() + i; return new Date(y, m, Math.min(start.getDate(), new Date(y, m + 1, 0).getDate())).getTime(); };
+  let bal = P;
+  if (p.method === 'REDUCING') {
+    const r = annual / 12;
+    const pmt = r ? P * r / (1 - Math.pow(1 + r, -n)) : P / n;
+    for (let i = 0; i < n; i++) {
+      const interest = bal * r; const principal = i === n - 1 ? bal : pmt - interest;
+      bal = Math.max(0, bal - principal);
+      rows.push({ i: i + 1, date: dateOf(i), payment: principal + interest + (i === 0 ? fees : 0), principal, interest, balance: bal });
+    }
+  } else {
+    const interestEach = P * annual * n / 12 / n;
+    for (let i = 0; i < n; i++) {
+      const principal = P / n; bal = Math.max(0, bal - principal);
+      rows.push({ i: i + 1, date: dateOf(i), payment: principal + interestEach + (i === 0 ? fees : 0), principal, interest: interestEach, balance: bal });
+    }
+  }
+  return rows;
+}
+function planSummary(p) {
+  const rows = schedule(p); const paid = Math.min(p.paid || 0, rows.length);
+  const sum = (a, k) => a.reduce((s, r) => s + r[k], 0);
+  const rest = rows.slice(paid);
+  return { rows, paid, monthly: rows[0] ? rows[rows.length > 1 ? 1 : 0].payment : 0, totalInterest: sum(rows, 'interest'), total: sum(rows, 'payment'),
+    remaining: sum(rest, 'payment'), remainingPrincipal: sum(rest, 'principal'), remainingInterest: sum(rest, 'interest'), next: rest[0] || null };
+}
+const nextInstallment = p => planSummary(p).next;
+
+function renderCards() {
+  const bal = balances();
+  const cards = db.accounts.filter(a => a.type === 'CREDIT' && !a.archived);
+  view().innerHTML = `
+    ${cards.length ? cards.map(a => {
+      const owed = Math.max(0, -(bal[a.id] || 0)); const lim = +a.creditLimit || 0; const p = lim ? owed / lim * 100 : 0;
+      const plans = db.installments.filter(x => x.cardId === a.id);
+      const blocked = plans.reduce((s, x) => s + planSummary(x).remainingPrincipal, 0);
+      return `<div class="card ccard">
+        <div class="row between"><b>${esc(lbl(a.name))}</b><span class="muted">${a.last4 ? '•••• ' + esc(a.last4) : ''}</span></div>
+        <div class="row between" style="margin-top:14px"><div><div class="muted">المستخدم</div><div class="big2 num">${money(owed)}</div></div>
+          ${lim ? `<div style="text-align:left"><div class="muted">المتاح</div><div class="big2 num">${money(Math.max(0, lim - owed))}</div></div>` : ''}</div>
+        ${lim ? `<div class="bar light ${p >= 80 ? 'over' : p >= 50 ? 'warn' : ''}"><i style="width:${Math.min(100, p)}%"></i></div><div class="muted" style="margin-top:4px">${p.toFixed(0)}% من الحد ${money(lim)} ${a.currency}${p >= 30 ? ' · يُفضّل إبقاء الاستخدام أقل من 30%' : ''}</div>` : ''}
+        <div class="muted" style="margin-top:6px">${a.statementDay ? `كشف الحساب يوم ${a.statementDay}` : ''}${a.dueDay ? ` · آخر موعد سداد يوم ${a.dueDay} (بعد ${daysUntilDay(a.dueDay)} يوم)` : ''}${blocked ? ` · أقساط متبقية ${money(blocked)}` : ''}</div>
+        <div class="btns"><button class="btn small" data-pay="${a.id}">💸 سداد البطاقة</button><button class="btn small" data-plan="${a.id}">📅 تقسيط جديد</button><button class="btn small" data-edit="${a.id}">✏️</button></div>
+      </div>`;
+    }).join('') : `<div class="card empty">لا توجد بطاقات ائتمان بعد.<br>أضف بطاقة لمتابعة الحد المستخدم ومواعيد السداد والتقسيط.</div>`}
+    <button class="btn primary block" id="ccNew">＋ إضافة بطاقة ائتمان</button>
+    <h3 style="margin-top:18px">📅 خطط التقسيط</h3>
+    ${db.installments.length ? db.installments.map(p => {
+      const s = planSummary(p); const a = acc(p.cardId);
+      return `<div class="card plan" data-p="${p.id}">
+        <div class="row between"><b>${esc(p.name)}</b><span class="pill">${s.paid}/${s.rows.length}</span></div>
+        <div class="muted">${a ? esc(lbl(a.name)) + ' · ' : ''}${p.method === 'REDUCING' ? 'فائدة متناقصة' : 'فائدة ثابتة'} ${p.rate}% سنوياً</div>
+        <div class="grid3" style="margin-top:10px">
+          <div><span class="muted">القسط الشهري</span><b class="num">${money(s.monthly)}</b></div>
+          <div><span class="muted">المتبقي</span><b class="num">${money(s.remaining)}</b></div>
+          <div><span class="muted">القسط القادم</span><b>${s.next ? ltr(fmtDate(s.next.date)) : '✅ انتهى'}</b></div>
+        </div>
+        <div class="bar"><i style="width:${s.paid / s.rows.length * 100}%"></i></div>
+      </div>`;
+    }).join('') : '<div class="card empty">لا توجد خطط تقسيط. اضغط «تقسيط جديد» من البطاقة أو من هنا.</div>'}
+    <button class="btn block" id="plNew">＋ خطة تقسيط</button>`;
+  view().querySelectorAll('[data-pay]').forEach(b => b.onclick = () => {
+    const a = acc(+b.dataset.pay); const owed = Math.max(0, -(balances()[a.id] || 0));
+    const from = db.accounts.find(x => x.type !== 'CREDIT' && x.currency === a.currency && !x.archived);
+    openTxn(null, { type: 'TRANSFER', amount: owed || '', accountId: from ? from.id : a.id, toAccountId: a.id, merchant: 'سداد ' + lbl(a.name) });
+  });
+  view().querySelectorAll('[data-plan]').forEach(b => b.onclick = () => editPlan(null, +b.dataset.plan));
+  view().querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editAccount(acc(+b.dataset.edit), true));
+  view().querySelectorAll('[data-p]').forEach(el => el.onclick = () => openPlan(db.installments.find(p => p.id === +el.dataset.p)));
+  $('#ccNew').onclick = () => editAccount(null, true);
+  $('#plNew').onclick = () => editPlan();
+}
+
+function editPlan(p, cardId) {
+  const isNew = !p;
+  p = p || { name: '', cardId: cardId || (db.accounts.find(a => a.type === 'CREDIT') || {}).id || null, principal: '', rate: '', months: 12, method: 'FLAT', fees: 0, startDate: Date.now(), paid: 0 };
+  sheet(isNew ? 'خطة تقسيط جديدة' : 'تعديل خطة التقسيط', `
+    <label class="f">اسم المشتريات</label><input class="in" id="pN" value="${esc(p.name)}" placeholder="مثال: موبايل، تكييف">
+    <label class="f">البطاقة / الحساب</label><select class="in" id="pC"><option value="">بدون</option>${accOptions(p.cardId)}</select>
+    <div class="grid2">
+      <div><label class="f">أصل المبلغ (Principal)</label><input class="in num" id="pP" inputmode="decimal" value="${p.principal}"></div>
+      <div><label class="f">عدد الشهور</label><input class="in num" id="pM" inputmode="numeric" value="${p.months}"></div>
+      <div><label class="f">سعر الفائدة السنوي %</label><input class="in num" id="pR" inputmode="decimal" value="${p.rate}" placeholder="0 = بدون فوائد"></div>
+      <div><label class="f">مصاريف إدارية</label><input class="in num" id="pF" inputmode="decimal" value="${p.fees || 0}"></div>
+    </div>
+    <label class="f">طريقة حساب الفائدة</label>
+    <div class="seg"><button data-m="FLAT" class="${p.method !== 'REDUCING' ? 'on' : ''}">ثابتة (Flat)</button><button data-m="REDUCING" class="${p.method === 'REDUCING' ? 'on' : ''}">متناقصة</button></div>
+    <p class="muted" style="margin:6px 0 0">الثابتة: الفائدة تُحسب على أصل المبلغ كله طول المدة (أغلب البنوك في مصر). المتناقصة: تُحسب على المتبقي فقط.</p>
+    <label class="f">تاريخ أول قسط</label><input class="in" type="date" id="pD" value="${fmtDate(p.startDate)}">
+    ${isNew ? '' : `<label class="f">عدد الأقساط المدفوعة</label><input class="in num" id="pPaid" inputmode="numeric" value="${p.paid || 0}">`}
+    <div class="insight" id="pPrev" style="margin-top:12px"></div>
+    <div class="btns"><button class="btn primary" id="pSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="pDel">حذف</button>'}</div>`, body => {
+    let method = p.method || 'FLAT';
+    const read = () => ({ ...p, name: $('#pN').value.trim(), cardId: +$('#pC').value || null, principal: parseAmount($('#pP').value) || 0, months: parseInt(normDigits($('#pM').value)) || 1,
+      rate: parseAmount($('#pR').value) || 0, fees: parseAmount($('#pF').value) || 0, method, startDate: new Date($('#pD').value + 'T09:00').getTime() || Date.now(),
+      paid: isNew ? 0 : Math.max(0, parseInt(normDigits($('#pPaid').value)) || 0) });
+    const prev = () => { const x = read(); if (!x.principal) { $('#pPrev').innerHTML = 'أدخل أصل المبلغ لعرض القسط'; return; } const s = planSummary(x);
+      $('#pPrev').innerHTML = `القسط الشهري: <b class="num">${money(s.monthly)}</b><br>إجمالي الفوائد: <b class="num">${money(s.totalInterest)}</b> · الإجمالي: <b class="num">${money(s.total)}</b>`; };
+    body.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { method = b.dataset.m; body.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('on', x === b)); prev(); });
+    body.querySelectorAll('input,select').forEach(i => i.addEventListener('input', prev));
+    prev();
+    $('#pSave').onclick = () => {
+      const x = read(); if (!x.name || !(x.principal > 0)) return toast('أدخل الاسم وأصل المبلغ');
+      x.id = x.id || newId();
+      const i = db.installments.findIndex(y => y.id === x.id); if (i >= 0) db.installments[i] = x; else db.installments.push(x);
+      save(); closeSheet(); setTab('cards');
+    };
+    if (!isNew) $('#pDel').onclick = () => { if (confirm('حذف خطة التقسيط؟')) { db.installments = db.installments.filter(y => y.id !== p.id); save(); closeSheet(); } };
+  });
+}
+
+function openPlan(p) {
+  const s = planSummary(p);
+  sheet(p.name, `
+    <div class="grid2">
+      <div class="stat"><span class="muted">أصل المبلغ</span><b class="num">${money(p.principal)}</b></div>
+      <div class="stat"><span class="muted">إجمالي الفوائد</span><b class="num exp">${money(s.totalInterest)}</b></div>
+      <div class="stat"><span class="muted">المتبقي من الأصل</span><b class="num">${money(s.remainingPrincipal)}</b></div>
+      <div class="stat"><span class="muted">المتبقي من الفوائد</span><b class="num">${money(s.remainingInterest)}</b></div>
+    </div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>#</th><th>التاريخ</th><th>القسط</th><th>أصل</th><th>فائدة</th><th>المتبقي</th></tr></thead><tbody>
+      ${s.rows.map(r => `<tr class="${r.i <= s.paid ? 'done' : r === s.next ? 'next' : ''}"><td>${r.i <= s.paid ? '✅' : r.i}</td><td class="num">${fmtDate(r.date).slice(2)}</td><td class="num">${money(r.payment)}</td><td class="num">${money(r.principal)}</td><td class="num">${money(r.interest)}</td><td class="num">${money(r.balance)}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${s.next ? `<label class="f">سداد القسط رقم ${s.next.i} من حساب</label><select class="in" id="ppA"><option value="">تسجيل كمدفوع فقط</option>${accOptions(p.cardId)}</select>
+    <button class="btn primary block" id="ppPay" style="margin-top:10px">✅ تسجيل سداد القسط (${money(s.next.payment)})</button>` : '<div class="insight">🎉 تم سداد كل الأقساط</div>'}
+    <div class="btns"><button class="btn" id="ppEdit">✏️ تعديل</button>${s.paid ? '<button class="btn" id="ppUndo">↩️ تراجع عن آخر قسط</button>' : ''}</div>`, () => {
+    if ($('#ppPay')) $('#ppPay').onclick = () => {
+      const aId = +$('#ppA').value;
+      if (aId) db.txns.push({ id: newId(), type: 'EXPENSE', amount: Math.round(s.next.payment * 100) / 100, accountId: aId, categoryId: (catByName('cat_installments') || {}).id || null,
+        merchant: p.name, note: `قسط ${s.next.i}/${s.rows.length}`, date: Date.now(), source: 'INSTALLMENT' });
+      p.paid = (p.paid || 0) + 1; save(); toast('تم تسجيل القسط'); openPlan(p);
+    };
+    $('#ppEdit').onclick = () => editPlan(p);
+    if ($('#ppUndo')) $('#ppUndo').onclick = () => { p.paid = Math.max(0, p.paid - 1); save(); openPlan(p); };
+  });
+}
+
+// ================= الادخار =================
+const SAVING_TIPS = [
+  'ادفع لنفسك أولاً: أول ما المرتب ينزل حوّل نسبة الادخار لحساب منفصل قبل أي صرف.',
+  'قاعدة الـ 30 يوم: لو عاوز تشتري حاجة مش ضرورية، استنى 30 يوم. لو لسه عاوزها اشتريها.',
+  'صندوق الطوارئ أهم من أي استثمار: 3 إلى 6 شهور من مصاريفك الأساسية.',
+  'سدّد الديون ذات الفائدة الأعلى الأول (غالباً كارت الائتمان)، الفائدة بتاكل أي ادخار.',
+  'راجع الاشتراكات الشهرية كل 3 شهور وألغي اللي مش بتستخدمه.',
+  'حدد ميزانية لكل تصنيف، والتطبيق هينبهك لما توصل 80%.',
+  'لما دخلك يزيد، زوّد نسبة الادخار بنفس النسبة قبل ما مصاريفك تزيد.',
+  'سدّد كارت الائتمان بالكامل قبل آخر موعد عشان ماتدفعش فوايد.'
+];
+function avgMonthly(type, months = 3) {
+  let s = 0; for (let o = -months; o <= -1; o++) { const [f, t] = monthRange(o); s += typeTotals(inRange(f, t))[type === 'INCOME' ? 0 : 1]; } return s / months;
+}
+function renderSavings() {
+  const [f, t] = monthRange(0);
+  const month = inRange(f, t);
+  let [inc, exp] = typeTotals(month);
+  const avgInc = avgMonthly('INCOME'), avgExp = avgMonthly('EXPENSE');
+  const incBase = inc || avgInc;
+  const cats = catTotals(month, 'EXPENSE');
+  let needs = 0, wants = 0;
+  for (const k in cats) { const c = cat(+k); if (c && catGroup(c) === 'NEED') needs += cats[k]; else wants += cats[k]; }
+  const saved = incBase - exp; const rate = incBase > 0 ? saved / incBase * 100 : 0;
+  const target = db.prefs.savingRate || 20;
+  const bal = balances();
+  const savingsBal = db.accounts.filter(a => a.type === 'SAVING' || a.type === 'GOLD').reduce((s, a) => s + conv(bal[a.id] || 0, a.currency), 0);
+  let needAvg = 0;
+  for (let o = -3; o <= -1; o++) { const [a, b] = monthRange(o); const m = catTotals(inRange(a, b), 'EXPENSE'); for (const k in m) { const c = cat(+k); if (c && catGroup(c) === 'NEED') needAvg += m[k] / 3; } }
+  const emergency = (needAvg || needs || avgExp) * 6;
+  const em = emergency ? Math.min(100, savingsBal / emergency * 100) : 0;
+  const score = Math.round(Math.max(0, Math.min(100, (Math.min(rate, 30) / 30) * 50 + (em / 100) * 30 + (incBase && needs / incBase <= .5 ? 20 : 10))));
+  const wantCats = Object.entries(cats).map(([k, v]) => [cat(+k), v]).filter(([c]) => c && catGroup(c) === 'WANT').sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const bar = (v, tgt, cls) => `<div class="bar ${cls || ''}"><i style="width:${Math.min(100, incBase ? v / incBase * 100 / tgt * 100 : 0)}%"></i></div>`;
+  const tip = SAVING_TIPS[new Date().getDate() % SAVING_TIPS.length];
+  view().innerHTML = `
+    <div class="card hero">
+      <div class="row between"><div><div class="muted">صحتك المالية هذا الشهر</div><div class="big">${score}<small style="font-size:16px">/100</small></div></div><div class="ring" style="--p:${score}"><span>${score >= 70 ? '😎' : score >= 40 ? '🙂' : '😟'}</span></div></div>
+      <div class="hero-stats"><div><span class="muted">ادّخرت</span><b class="num">${money(Math.max(0, saved))}</b></div><div><span class="muted">نسبة الادخار</span><b class="num">${rate.toFixed(0)}%</b></div><div><span class="muted">الهدف</span><b class="num">${target}%</b></div></div>
+    </div>
+    ${!inc && avgInc ? '<div class="insight">ℹ️ مفيش دخل مسجّل الشهر ده، فالحساب على متوسط دخلك آخر 3 شهور.</div>' : ''}
+    ${!incBase ? '<div class="insight w">سجّل دخلك (المرتب مثلاً) عشان نقدر نحسب خطة الادخار. ممكن تضيفه كمعاملة متكررة شهرية.</div>' : ''}
+    <div class="card"><h3>📐 قاعدة 50 / 30 / 20</h3>
+      <p class="muted" style="margin-top:0">قسّم دخلك: 50% احتياجات أساسية، 30% رغبات، 20% ادخار.</p>
+      <div class="rule"><div class="row between"><span>🏠 احتياجات</span><span class="num">${money(needs)} <small class="muted">من ${money(incBase * .5)}</small></span></div>${bar(needs, 50, needs > incBase * .5 ? 'over' : '')}</div>
+      <div class="rule"><div class="row between"><span>🎉 رغبات</span><span class="num">${money(wants)} <small class="muted">من ${money(incBase * .3)}</small></span></div>${bar(wants, 30, wants > incBase * .3 ? 'over' : '')}</div>
+      <div class="rule"><div class="row between"><span>🐷 ادخار</span><span class="num">${money(Math.max(0, saved))} <small class="muted">من ${money(incBase * target / 100)}</small></span></div>${bar(Math.max(0, saved), target, 'good')}</div>
+      <p class="muted">تقدر تغيّر نوع أي تصنيف (احتياج أو رغبة) من «التصنيفات».</p>
+    </div>
+    <div class="card"><h3>🛟 صندوق الطوارئ</h3>
+      <div class="row between"><span>رصيد حسابات التوفير والذهب</span><b class="num">${money(savingsBal)}</b></div>
+      <div class="row between muted"><span>المطلوب (6 شهور احتياجات)</span><span class="num">${money(emergency)}</span></div>
+      <div class="bar good"><i style="width:${em}%"></i></div>
+      <p class="muted">${em >= 100 ? '✅ صندوق الطوارئ مكتمل، ابدأ وجّه الزيادة للاستثمار أو أهدافك.' : `ناقصك ${money(Math.max(0, emergency - savingsBal))}. لو ادّخرت ${money(incBase * target / 100)} شهرياً هتوصل خلال ${incBase ? Math.ceil(Math.max(0, emergency - savingsBal) / Math.max(1, incBase * target / 100)) : '—'} شهر.`}</p>
+    </div>
+    ${wantCats.length ? `<div class="card"><h3>✂️ فرص للتوفير</h3>${wantCats.map(([c, v]) => `<div class="insight">${c.icon} ${esc(lbl(c.name))}: صرفت <b class="num">${money(v)}</b>. لو قلّلت 20% هتوفّر <b class="num">${money(v * .2)}</b> شهرياً (${money(v * .2 * 12)} في السنة).</div>`).join('')}</div>` : ''}
+    <div class="card"><h3>🎯 خطة الأهداف</h3>
+      ${db.goals.length ? db.goals.map(g => { const left = Math.max(0, g.target - g.saved); const months = g.deadline ? Math.max(1, Math.ceil((g.deadline - Date.now()) / (30.44 * DAY))) : null;
+        return `<div class="rule"><div class="row between"><span>${g.icon} ${esc(g.name)}</span><span class="num muted">${money(g.saved)} / ${money(g.target)}</span></div><div class="bar good"><i style="width:${Math.min(100, g.saved / g.target * 100)}%"></i></div>
+        <div class="muted">${left <= 0 ? '✅ تم الهدف' : months ? `محتاج تحوّش <b class="num">${money(left / months)}</b> ${g.currency} شهرياً لمدة ${months} شهر` : `ناقص ${money(left)} ${g.currency} · حدّد تاريخ للهدف عشان نحسب القسط الشهري`}</div></div>`; }).join('') : '<p class="muted">مفيش أهداف لسه.</p>'}
+      <button class="btn small" id="svGoal">＋ هدف جديد</button>
+    </div>
+    <div class="card"><h3>💡 نصيحة النهارده</h3><p style="margin:0">${tip}</p></div>
+    <div class="card"><h3>⚙️ نسبة الادخار المستهدفة</h3>
+      <div class="chips">${[10, 15, 20, 25, 30].map(v => `<button class="chip ${target === v ? 'on' : ''}" data-sr="${v}">${v}%</button>`).join('')}</div></div>`;
+  $('#svGoal').onclick = () => editGoal();
+  view().querySelectorAll('[data-sr]').forEach(b => b.onclick = () => { db.prefs.savingRate = +b.dataset.sr; save(); renderSavings(); });
+}
+
+// ================= رسائل البنك (الوارد) =================
+function hashText(s) { let h = 5381; const t = normDigits(s).replace(/\s+/g, ' ').trim(); for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return 'h' + (h >>> 0).toString(36); }
+function splitMessages(text) { return String(text || '').split(/\n\s*\n|\n?-{3,}\n?/).map(s => s.trim()).filter(Boolean); }
+function matchAccount(p) {
+  let a = p.last4 && db.accounts.find(x => x.last4 === p.last4);
+  if (!a && p.currency) a = db.accounts.find(x => x.currency === p.currency && x.type !== 'CASH' && !x.archived) || db.accounts.find(x => x.currency === p.currency);
+  return a || null;
+}
+function suggestionToTxn(m) {
+  const p = m.parsed; const a = matchAccount(p) || db.accounts[0];
+  return { type: p.kind === 'CREDIT' ? 'INCOME' : 'EXPENSE', amount: p.amount, accountId: a && a.id, categoryId: suggestCategory(p.merchant, p.kind, m.body), merchant: p.merchant, date: p.date, note: p.last4 ? '••' + p.last4 : '' };
+}
+// يحلل الرسائل ويضيفها للوارد (أو مباشرة للحركات عند تفعيل الإضافة التلقائية). يتجاهل المكرر.
+function ingestMessages(text) {
+  const known = new Set([...db.inbox.map(m => m.hash), ...db.txns.map(t => t.hash).filter(Boolean)]);
+  let added = 0, auto = 0, dup = 0, skipped = 0;
+  for (const body of splitMessages(text)) {
+    const hash = hashText(body);
+    if (known.has(hash)) { dup++; continue; }
+    known.add(hash);
+    const p = SMS.parse(body);
+    if (!p) { skipped++; continue; }
+    const m = { id: newId(), hash, body, parsed: p, status: 'PENDING', at: Date.now() };
+    if (db.prefs.autoAddSms && matchAccount(p)) {
+      const t = suggestionToTxn(m);
+      db.txns.push({ id: newId(), ...t, hash, source: 'SMS_AUTO' });
+      if (p.last4) { const a = acc(t.accountId); if (a && !a.last4) a.last4 = p.last4; }
+      m.status = 'ACCEPTED'; auto++;
+    } else added++;
+    db.inbox.push(m);
+  }
+  db.inbox = db.inbox.slice(-500);
+  save();
+  return { added, auto, dup, skipped };
+}
+function reportIngest(r) {
+  const parts = [];
+  if (r.auto) parts.push(`تمت إضافة ${r.auto} حركة تلقائياً`);
+  if (r.added) parts.push(`${r.added} رسالة للمراجعة`);
+  if (r.dup) parts.push(`${r.dup} مكررة`);
+  if (r.skipped) parts.push(`${r.skipped} مش حركة مالية`);
+  toast(parts.join(' · ') || 'لا توجد رسائل');
+}
+function renderInbox() {
+  const pending = db.inbox.filter(m => m.status === 'PENDING').sort((a, b) => b.parsed.date - a.parsed.date);
+  const kindL = { DEBIT: 'مصروف', CREDIT: 'دخل', TRANSFER: 'تحويل', ATM: 'سحب نقدي' };
+  view().innerHTML = `
+    <div class="card">
+      <div class="quick inside">
+        <button id="ibPaste"><span class="qi blue">📋</span>لصق رسائل</button>
+        <button id="ibFile"><span class="qi purple">📂</span>استيراد ملف</button>
+        <button id="ibHow"><span class="qi amber">⚡</span>ربط تلقائي</button>
+      </div>
+      <input type="file" id="ibFileIn" accept=".txt,text/plain" class="hidden">
+      <label class="row" style="margin-top:12px"><input type="checkbox" id="ibAuto" ${db.prefs.autoAddSms ? 'checked' : ''}> أضف الحركات تلقائياً بدون مراجعة (لما الحساب يتعرّف)</label>
+    </div>
+    <div class="row between"><h3>للمراجعة (${pending.length})</h3>${pending.length ? '<button class="btn small" id="ibIgnoreAll">تجاهل الكل</button>' : ''}</div>
+    ${pending.length ? pending.map(m => { const p = m.parsed; const a = matchAccount(p);
+      return `<div class="card sms">
+        <div class="row between"><b class="num ${p.kind === 'CREDIT' ? 'inc' : 'exp'}">${p.kind === 'CREDIT' ? '+' : '-'}${money(p.amount)} ${p.currency || ''}</b><span class="pill">${kindL[p.kind]}</span></div>
+        <div>${esc(p.merchant || '—')}</div>
+        <div class="muted">${ltr(fmtDT(p.date))}${a ? ' · ' + esc(lbl(a.name)) : ''}${p.last4 ? ' · ••' + p.last4 : ''}</div>
+        <details><summary class="muted">نص الرسالة</summary><div class="muted">${esc(m.body)}</div></details>
+        <div class="btns"><button class="btn small primary" data-ok="${m.id}">✔︎ إضافة</button><button class="btn small" data-ign="${m.id}">تجاهل</button></div>
+      </div>`; }).join('') : '<div class="card empty">مفيش رسائل للمراجعة 👌</div>'}`;
+  $('#ibPaste').onclick = openSmsPaste;
+  $('#ibFile').onclick = () => $('#ibFileIn').click();
+  $('#ibFileIn').onchange = async e => { const f = e.target.files[0]; if (!f) return; reportIngest(ingestMessages(await f.text())); renderInbox(); };
+  $('#ibHow').onclick = openSmsAutomation;
+  $('#ibAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
+  if ($('#ibIgnoreAll')) $('#ibIgnoreAll').onclick = () => { pending.forEach(m => m.status = 'IGNORED'); save(); renderInbox(); };
+  view().querySelectorAll('[data-ign]').forEach(b => b.onclick = () => { db.inbox.find(m => m.id === +b.dataset.ign).status = 'IGNORED'; save(); renderInbox(); });
+  view().querySelectorAll('[data-ok]').forEach(b => b.onclick = () => {
+    const m = db.inbox.find(x => x.id === +b.dataset.ok);
+    openTxn(null, { ...suggestionToTxn(m), source: 'SMS_OK', hash: m.hash, inboxId: m.id });
+  });
+}
+function openSmsAutomation() {
+  sheet('ربط رسائل البنك تلقائياً', `
+    <p>الآيفون مش بيسمح لأي تطبيق يقرأ الرسائل بنفسه، بس تقدر تخلّي تطبيق <b>الاختصارات (Shortcuts)</b> يجمع رسائل البنك أول ما توصل، وتدخل كلها للتطبيق بضغطة واحدة.</p>
+    <h3>مرة واحدة بس:</h3>
+    <ol class="steps">
+      <li>افتح تطبيق <b>Shortcuts</b> ← تبويب <b>Automation</b> ← <b>+</b> ← <b>Message</b>.</li>
+      <li>في <b>Sender</b> اختار رقم/اسم البنك (أو في <b>Message Contains</b> اكتب كلمة زي «خصم» أو «EGP»).</li>
+      <li>اختار <b>Run Immediately</b> ثم Next ← <b>New Blank Automation</b>.</li>
+      <li>أضف أكشن <b>Append to Text File</b>: النص = <b>Shortcut Input</b> (المحتوى Content)، والملف = <b>Shortcuts/masrfi-sms.txt</b> في iCloud Drive، وفعّل <b>Make New Line</b>.</li>
+      <li>أضف بعده أكشن <b>Append to Text File</b> تاني بنص <b>---</b> لنفس الملف (فاصل بين الرسايل).</li>
+    </ol>
+    <h3>بعد كده:</h3>
+    <p>افتح «رسائل البنك» ← <b>استيراد ملف</b> ← اختار masrfi-sms.txt. الرسائل الجديدة بس هتتضاف، والمكرر بيتجاهل تلقائياً. لو فعّلت «أضف تلقائياً» هتتسجّل كحركات على طول.</p>
+    <p class="muted">نصيحة: اكتب آخر 4 أرقام من كل بطاقة في إعدادات الحساب عشان التطبيق يربط الرسالة بالحساب الصح.</p>`);
+}
+
+// ================= الإعدادات والتذكير =================
+const APP_URL = location.origin + location.pathname;
+function icsFor(time) {
+  const [h, m] = time.split(':').map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0); if (d < new Date()) d.setDate(d.getDate() + 1);
+  const st = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(h)}${pad(m)}00`;
+  const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//masrfi//MyWallet//AR', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT', `UID:masrfi-daily-reminder@${location.host || 'local'}`, `DTSTAMP:${now}`,
+    `DTSTART:${st}`, 'DURATION:PT5M', 'RRULE:FREQ=DAILY', 'SUMMARY:💰 سجّل مصاريف النهارده في محفظتي', `URL:${APP_URL}`, `DESCRIPTION:افتح محفظتي وسجّل مصاريف اليوم: ${APP_URL}`,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:PT0M', 'DESCRIPTION:سجّل مصاريف النهارده', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+}
+function openSettings() {
+  const notifOk = 'Notification' in window;
+  sheet('الإعدادات', `
+    <h3>⏰ التذكير اليومي</h3>
+    <label class="f">وقت التذكير</label><input class="in" type="time" id="stTime" value="${db.prefs.reminderTime || '21:00'}">
+    <button class="btn primary block" id="stIcs" style="margin-top:10px">📅 إضافة التذكير اليومي للتقويم</button>
+    <p class="muted">هيظهر لك تنبيه كل يوم في الوقت ده على الآيفون <b>وعلى ساعة أبل</b> كمان. اضغط «Add All» لما يظهر لك التقويم.</p>
+    ${notifOk ? `<button class="btn block" id="stNotif">🔔 تفعيل إشعارات التطبيق</button><p class="muted">على الآيفون محتاج تكون ضايف التطبيق للشاشة الرئيسية (iOS 16.4 أو أحدث).</p>` : ''}
+    <h3 style="margin-top:16px">✉️ رسائل البنك</h3>
+    <label class="row"><input type="checkbox" id="stAuto" ${db.prefs.autoAddSms ? 'checked' : ''}> إضافة حركات الرسائل تلقائياً</label>
+    <button class="btn block" id="stSmsHow" style="margin-top:8px">⚡ طريقة الربط التلقائي بالاختصارات</button>
+    <h3 style="margin-top:16px">⌚ ساعة أبل</h3>
+    <p class="muted">تطبيقات الويب مش بتتثبت على الساعة، لكن تذكير التقويم اليومي بيظهر عليها. تطبيق ساعة كامل محتاج يتعمل كتطبيق iOS أصلي على جهاز Mac.</p>
+    <h3 style="margin-top:16px">أخرى</h3>
+    <div class="list menu">
+      <div class="item" id="stRates"><div class="ico">💱</div><div class="grow">العملة وأسعار الصرف</div><span class="muted">${base()} ‹</span></div>
+      <div class="item" id="stPin"><div class="ico">🔒</div><div class="grow">قفل PIN</div><span class="muted">${db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل'} ‹</span></div>
+      <div class="item" id="stBackup"><div class="ico">💾</div><div class="grow">نسخ احتياطي واستعادة</div><span class="muted">‹</span></div>
+    </div>`, () => {
+    $('#stTime').onchange = e => { db.prefs.reminderTime = e.target.value; save(); };
+    $('#stIcs').onclick = () => {
+      db.prefs.reminderTime = $('#stTime').value || '21:00'; save();
+      const blob = new Blob([icsFor(db.prefs.reminderTime)], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      if (isIOS) location.href = url; else shareOrDownload('masrfi-reminder.ics', blob);
+    };
+    if ($('#stNotif')) $('#stNotif').onclick = async () => {
+      const r = await Notification.requestPermission();
+      if (r === 'granted') { const reg = await navigator.serviceWorker?.getRegistration(); const opts = { body: 'هنفكّرك تسجّل مصاريفك لما تفتح التطبيق', icon: 'icons/icon-192.png' };
+        if (reg) reg.showNotification('محفظتي', opts); else new Notification('محفظتي', opts); toast('تم تفعيل الإشعارات'); }
+      else toast('الإشعارات مش مسموحة. فعّلها من إعدادات الآيفون');
+    };
+    $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
+    $('#stSmsHow').onclick = openSmsAutomation;
+    $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
+  });
 }
 
 // ================= النوافذ =================
@@ -602,9 +1016,10 @@ function openTxn(t, preset) {
       if (type === 'TRANSFER' && (!t.toAccountId || t.toAccountId === t.accountId)) return toast('اختر حساباً مختلفاً للتحويل');
       const rec = { id: t.id || newId(), type, amount: amt, accountId: t.accountId, toAccountId: type === 'TRANSFER' ? t.toAccountId : null,
         toAmount: type === 'TRANSFER' ? parseAmount(t.toAmount) : null, categoryId: type === 'TRANSFER' ? null : t.categoryId,
-        merchant: t.merchant.trim(), note: t.note.trim(), date: t.date, source: t.source || 'MANUAL' };
+        merchant: t.merchant.trim(), note: t.note.trim(), date: t.date, source: t.source || 'MANUAL', hash: t.hash || null };
       const i = db.txns.findIndex(x => x.id === rec.id);
       if (i >= 0) db.txns[i] = rec; else db.txns.push(rec);
+      if (t.inboxId) { const m = db.inbox.find(x => x.id === t.inboxId); if (m) m.status = 'ACCEPTED'; const a = acc(rec.accountId); if (m && m.parsed.last4 && a && !a.last4) a.last4 = m.parsed.last4; }
       if (rec.categoryId && rec.merchant) learn(rec.merchant, rec.categoryId);
       save(); closeSheet(); toast('تم الحفظ');
     };
@@ -628,30 +1043,16 @@ function openSmsPaste() {
     <div id="smsOut" style="margin-top:10px"></div>`, () => {
     $('#smsPaste').onclick = async () => { try { $('#smsTxt').value = await navigator.clipboard.readText(); } catch (e) { toast('اضغط مطولاً داخل الخانة واختر «لصق»'); } };
     $('#smsGo').onclick = () => {
-      const msgs = $('#smsTxt').value.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
-      const parsed = msgs.map(m => ({ m, p: SMS.parse(m) })).filter(x => x.p);
-      if (!parsed.length) { $('#smsOut').innerHTML = '<div class="insight w">لم يتم التعرف على حركة مالية في النص.</div>'; return; }
-      $('#smsOut').innerHTML = parsed.map((x, i) => {
-        const p = x.p; const kindL = { DEBIT: 'مصروف', CREDIT: 'دخل', TRANSFER: 'تحويل صادر', ATM: 'سحب نقدي' }[p.kind];
-        return `<div class="insight"><div class="row between"><b class="num ${p.kind === 'CREDIT' ? 'inc' : 'exp'}">${money(p.amount)} ${p.currency || ''}</b><span>${kindL}</span></div>
-          <div class="muted">${esc(p.merchant || '—')} · ${fmtDT(p.date)}${p.last4 ? ' · ••' + p.last4 : ''}${p.balance != null ? ' · الرصيد ' + money(p.balance) : ''}</div>
-          <button class="btn small primary" data-use="${i}" style="margin-top:6px">مراجعة وإضافة</button></div>`;
-      }).join('');
-      $('#smsOut').querySelectorAll('[data-use]').forEach(b => b.onclick = () => {
-        const p = parsed[+b.dataset.use].p; const body = parsed[+b.dataset.use].m;
-        let a = p.last4 && db.accounts.find(x => x.last4 === p.last4);
-        if (!a && p.currency) a = db.accounts.find(x => x.currency === p.currency && x.type !== 'CASH') || db.accounts.find(x => x.currency === p.currency);
-        a = a || db.accounts[0];
-        const type = p.kind === 'CREDIT' ? 'INCOME' : 'EXPENSE';
-        openTxn(null, { type, amount: p.amount, accountId: a && a.id, categoryId: suggestCategory(p.merchant, p.kind, body), merchant: p.merchant, date: p.date, source: 'SMS_OK', note: p.last4 ? '••' + p.last4 : '' });
-      });
+      const r = ingestMessages($('#smsTxt').value);
+      if (!r.added && !r.auto && !r.dup) { $('#smsOut').innerHTML = '<div class="insight w">لم يتم التعرف على حركة مالية في النص.</div>'; return; }
+      reportIngest(r); closeSheet(); setTab('inbox');
     };
   });
 }
 
 function openAccounts() {
   const bal = balances();
-  sheet('الحسابات', `<div class="list">${db.accounts.map(a => `<div class="item" data-a="${a.id}"><div class="ico">${{ BANK: '🏦', CASH: '💵', SAVING: '🐷', GOLD: '🪙', WALLET: '📲' }[a.type] || '💳'}</div>
+  sheet('الحسابات', `<div class="list">${db.accounts.map(a => `<div class="item" data-a="${a.id}"><div class="ico">${ACC_ICONS[a.type] || '💳'}</div>
     <div class="grow"><div>${esc(lbl(a.name))}${a.archived ? ' <span class="muted">(مؤرشف)</span>' : ''}</div><div class="muted">${ACC_TYPES[a.type] || a.type}${a.last4 ? ' · ••' + esc(a.last4) : ''}</div></div>
     <div class="num">${money(bal[a.id] || 0)} <small class="muted">${a.currency}</small></div></div>`).join('')}</div>
     <button class="btn primary block" id="aNew" style="margin-top:10px">＋ حساب جديد</button>`, () => {
@@ -659,22 +1060,33 @@ function openAccounts() {
     $('#aNew').onclick = () => editAccount();
   });
 }
-function editAccount(a) {
-  const isNew = !a; a = a || { name: '', type: 'BANK', currency: base(), initialBalance: 0, last4: '', archived: false };
-  sheet(isNew ? 'حساب جديد' : 'تعديل حساب', `
-    <label class="f">الاسم</label><input class="in" id="aName" value="${esc(lbl(a.name))}">
-    <label class="f">النوع</label><select class="in" id="aType">${Object.entries(ACC_TYPES).map(([k, v]) => `<option value="${k}" ${a.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+function editAccount(a, fromCards) {
+  const isNew = !a; a = a || { name: '', type: fromCards ? 'CREDIT' : 'BANK', currency: base(), initialBalance: 0, last4: '', archived: false };
+  let type = a.type;
+  const draw = () => sheet(isNew ? (type === 'CREDIT' ? 'بطاقة ائتمان جديدة' : 'حساب جديد') : 'تعديل حساب', `
+    <label class="f">الاسم</label><input class="in" id="aName" value="${esc(lbl(a.name))}" placeholder="${type === 'CREDIT' ? 'مثال: فيزا CIB' : ''}">
+    <label class="f">النوع</label><select class="in" id="aType">${Object.entries(ACC_TYPES).map(([k, v]) => `<option value="${k}" ${type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <label class="f">العملة</label><select class="in" id="aCur">${CURRENCIES.map(c => `<option ${a.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
-    <label class="f">الرصيد الافتتاحي</label><input class="in num" id="aBal" inputmode="decimal" value="${a.initialBalance}">
+    ${type === 'CREDIT' ? `
+      <label class="f">الحد الائتماني</label><input class="in num" id="aLim" inputmode="decimal" value="${a.creditLimit || ''}">
+      <label class="f">المبلغ المستحق عليها حالياً</label><input class="in num" id="aBal" inputmode="decimal" value="${-(a.initialBalance || 0) || 0}">
+      <div class="grid2"><div><label class="f">يوم كشف الحساب</label><input class="in num" id="aSt" inputmode="numeric" value="${a.statementDay || ''}" placeholder="مثال 25"></div>
+      <div><label class="f">آخر يوم للسداد</label><input class="in num" id="aDue" inputmode="numeric" value="${a.dueDay || ''}" placeholder="مثال 15"></div></div>`
+      : `<label class="f">الرصيد الافتتاحي</label><input class="in num" id="aBal" inputmode="decimal" value="${a.initialBalance}">`}
     <label class="f">آخر 4 أرقام من البطاقة/الحساب (لربط رسائل البنك)</label><input class="in num" id="aL4" inputmode="numeric" maxlength="4" value="${esc(a.last4)}">
     ${isNew ? '' : `<label class="row" style="margin-top:12px"><input type="checkbox" id="aArc" ${a.archived ? 'checked' : ''}> أرشفة (إخفاء من الرئيسية)</label>`}
     <div class="btns"><button class="btn primary" id="aSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="aDel">حذف</button>'}</div>`, () => {
+    $('#aType').onchange = e => { a = { ...a, name: $('#aName').value, currency: $('#aCur').value }; type = e.target.value; draw(); };
     $('#aSave').onclick = () => {
       const name = $('#aName').value.trim(); if (!name) return toast('أدخل اسم الحساب');
-      const rec = { ...a, id: a.id || newId(), name: name === lbl(a.name) ? a.name : name, type: $('#aType').value, currency: $('#aCur').value,
-        initialBalance: parseAmount($('#aBal').value) || 0, last4: $('#aL4').value.trim(), archived: isNew ? false : $('#aArc').checked };
+      const day = id => { const v = parseInt(normDigits(($(id) || {}).value)); return v >= 1 && v <= 31 ? v : null; };
+      const amt = parseAmount($('#aBal').value) || 0;
+      const rec = { ...a, id: a.id || newId(), name: name === lbl(a.name) ? a.name : name, type, currency: $('#aCur').value,
+        initialBalance: type === 'CREDIT' ? -Math.abs(amt) : amt, last4: $('#aL4').value.trim(), archived: isNew ? false : $('#aArc').checked };
+      if (type === 'CREDIT') Object.assign(rec, { creditLimit: parseAmount($('#aLim').value) || 0, statementDay: day('#aSt'), dueDay: day('#aDue') });
       const i = db.accounts.findIndex(x => x.id === rec.id); if (i >= 0) db.accounts[i] = rec; else db.accounts.push(rec);
-      save(); openAccounts();
+      save();
+      if (fromCards) { closeSheet(); setTab('cards'); } else openAccounts();
       if (rec.currency !== base() && !db.rates[rec.currency]) refreshRates();
     };
     if (!isNew) $('#aDel').onclick = () => {
@@ -684,6 +1096,7 @@ function editAccount(a) {
       db.accounts = db.accounts.filter(x => x.id !== a.id); save(); openAccounts();
     };
   });
+  draw();
 }
 
 function openCategories() {
@@ -714,11 +1127,12 @@ function editCategory(c) {
     <label class="f">النوع</label><select class="in" id="cInc"><option value="0" ${!c.isIncome ? 'selected' : ''}>مصروف</option><option value="1" ${c.isIncome ? 'selected' : ''}>دخل</option></select>
     <label class="f">الأيقونة</label><div class="emojis">${EMOJIS.map(e => `<button class="${e === icon ? 'on' : ''}" data-e="${e}">${e}</button>`).join('')}</div>
     <label class="f">الميزانية الشهرية (${base()}) — اتركها 0 لعدم التحديد</label><input class="in num" id="cBud" inputmode="decimal" value="${c.monthlyBudget}">
+    <label class="f">نوع المصروف (لخطة الادخار 50/30/20)</label><select class="in" id="cGrp"><option value="NEED" ${catGroup(c) === 'NEED' ? 'selected' : ''}>🏠 احتياج أساسي</option><option value="WANT" ${catGroup(c) === 'WANT' ? 'selected' : ''}>🎉 رغبة / كماليات</option></select>
     <div class="btns"><button class="btn primary" id="cSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="cDel">حذف</button>'}</div>`, body => {
     body.querySelectorAll('[data-e]').forEach(b => b.onclick = () => { icon = b.dataset.e; body.querySelectorAll('[data-e]').forEach(x => x.classList.toggle('on', x === b)); });
     $('#cSave').onclick = () => {
       const name = $('#cName').value.trim(); if (!name) return toast('أدخل اسم التصنيف');
-      const rec = { ...c, id: c.id || newId(), name: name === lbl(c.name) ? c.name : name, isIncome: $('#cInc').value === '1', icon, monthlyBudget: parseAmount($('#cBud').value) || 0 };
+      const rec = { ...c, id: c.id || newId(), name: name === lbl(c.name) ? c.name : name, isIncome: $('#cInc').value === '1', icon, monthlyBudget: parseAmount($('#cBud').value) || 0, group: $('#cGrp').value };
       const i = db.categories.findIndex(x => x.id === rec.id); if (i >= 0) db.categories[i] = rec; else db.categories.push(rec);
       save(); openCategories();
     };
@@ -736,7 +1150,7 @@ function openRecurring() {
     <p class="muted">تُضاف تلقائياً عند فتح التطبيق، وتعوّض المواعيد الفائتة.</p>
     <div class="list">${db.recurring.length ? db.recurring.map(r => { const c = cat(r.categoryId); const a = acc(r.accountId);
       return `<div class="item" data-r="${r.id}"><div class="ico">${c ? c.icon : '🔁'}</div><div class="grow"><div class="ellipsis">${esc(r.merchant || (c ? lbl(c.name) : ''))}${r.active ? '' : ' <span class="muted">(متوقف)</span>'}</div>
-      <div class="muted">${PERIODS[r.period]} · القادم ${fmtDate(r.nextDate)}</div></div><div class="num ${r.type === 'INCOME' ? 'inc' : 'exp'}">${money(r.amount)} <small class="muted">${a ? a.currency : ''}</small></div></div>`; }).join('') : '<div class="empty">لا توجد معاملات متكررة</div>'}</div>
+      <div class="muted">${PERIODS[r.period]} · القادم ${ltr(fmtDate(r.nextDate))}</div></div><div class="num ${r.type === 'INCOME' ? 'inc' : 'exp'}">${money(r.amount)} <small class="muted">${a ? a.currency : ''}</small></div></div>`; }).join('') : '<div class="empty">لا توجد معاملات متكررة</div>'}</div>
     ${subscriptionHints()}
     <button class="btn primary block" id="rNew" style="margin-top:10px">＋ إضافة</button>`, () => {
     document.querySelectorAll('[data-r]').forEach(el => el.onclick = () => editRecurring(db.recurring.find(r => r.id === +el.dataset.r)));
@@ -800,7 +1214,7 @@ function editRecurring(r, hint) {
 function openDebts() {
   sheet('الديون والقروض', `<div class="list">${db.debts.length ? db.debts.map(d => { const rem = d.amount - d.paid;
     return `<div class="item" data-d="${d.id}"><div class="ico">${d.lent ? '📤' : '📥'}</div><div class="grow"><div class="ellipsis">${esc(d.person)} <span class="muted">${d.lent ? 'يدين لي' : 'أدين له'}</span></div>
-    <div class="muted">${d.dueDate ? 'الاستحقاق ' + fmtDate(d.dueDate) : fmtDate(d.date)}${rem <= 0 ? ' · ✅ مسدد' : ''}</div><div class="bar"><i style="width:${Math.min(100, d.paid / d.amount * 100)}%"></i></div></div>
+    <div class="muted">${d.dueDate ? 'الاستحقاق ' + ltr(fmtDate(d.dueDate)) : ltr(fmtDate(d.date))}${rem <= 0 ? ' · ✅ مسدد' : ''}</div><div class="bar"><i style="width:${Math.min(100, d.paid / d.amount * 100)}%"></i></div></div>
     <div class="num ${d.lent ? 'inc' : 'exp'}">${money(rem)} <small class="muted">${d.currency}</small></div></div>`; }).join('') : '<div class="empty">لا توجد ديون</div>'}</div>
     <button class="btn primary block" id="dNew" style="margin-top:10px">＋ دين جديد</button>`, () => {
     document.querySelectorAll('[data-d]').forEach(el => el.onclick = () => editDebt(db.debts.find(d => d.id === +el.dataset.d)));
@@ -861,13 +1275,14 @@ function editGoal(g) {
     <label class="f">المبلغ المستهدف</label><input class="in num" id="gT" inputmode="decimal" value="${g.target}">
     <label class="f">المدّخر حتى الآن</label><input class="in num" id="gS" inputmode="decimal" value="${g.saved}">
     <label class="f">العملة</label><select class="in" id="gC">${CURRENCIES.map(c => `<option ${g.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+    <label class="f">عاوز توصل للهدف قبل (اختياري)</label><input class="in" type="date" id="gD" value="${g.deadline ? fmtDate(g.deadline) : ''}">
     <label class="f">الأيقونة</label><div class="emojis">${['🎯', '🚗', '🏠', '✈️', '💍', '🎓', '💻', '📱', '🏖️', '🕋', '💰'].map(e => `<button class="${e === icon ? 'on' : ''}" data-e="${e}">${e}</button>`).join('')}</div>
     <div class="btns"><button class="btn primary" id="gSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="gDel">حذف</button>'}</div>`, body => {
     body.querySelectorAll('[data-e]').forEach(b => b.onclick = () => { icon = b.dataset.e; body.querySelectorAll('[data-e]').forEach(x => x.classList.toggle('on', x === b)); });
     $('#gSave').onclick = () => {
       const t = parseAmount($('#gT').value); const n = $('#gN').value.trim();
       if (!n || !(t > 0)) return toast('أدخل الاسم والمبلغ');
-      const rec = { ...g, id: g.id || newId(), name: n, target: t, saved: parseAmount($('#gS').value) || 0, currency: $('#gC').value, icon };
+      const rec = { ...g, id: g.id || newId(), name: n, target: t, saved: parseAmount($('#gS').value) || 0, currency: $('#gC').value, icon, deadline: $('#gD').value ? new Date($('#gD').value + 'T09:00').getTime() : null };
       const i = db.goals.findIndex(x => x.id === rec.id); if (i >= 0) db.goals[i] = rec; else db.goals.push(rec);
       save(); openGoals();
     };
@@ -906,7 +1321,7 @@ function openRates() {
   const used = [...new Set([...db.accounts.map(a => a.currency), ...db.goals.map(g => g.currency), ...db.debts.map(d => d.currency), 'USD'])].filter(c => c !== base());
   sheet('العملة وأسعار الصرف', `
     <label class="f">العملة الأساسية</label><select class="in" id="rBase">${CURRENCIES.map(c => `<option ${base() === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
-    <p class="muted">آخر تحديث: ${db.prefs.ratesUpdated ? fmtDT(db.prefs.ratesUpdated) : 'لم يتم بعد'}</p>
+    <p class="muted">آخر تحديث: ${db.prefs.ratesUpdated ? ltr(fmtDT(db.prefs.ratesUpdated)) : 'لم يتم بعد'}</p>
     ${used.map(c => `<label class="f">1 ${c} = ? ${base()}</label><input class="in num" data-rc="${c}" inputmode="decimal" value="${db.rates[c] ? +db.rates[c].toFixed(4) : ''}">`).join('')}
     <div class="btns"><button class="btn" id="rRef">🔄 تحديث من الإنترنت</button><button class="btn primary" id="rSave">حفظ</button></div>`, () => {
     $('#rBase').onchange = e => { db.prefs.base = e.target.value; db.rates = {}; save(); refreshRates(true).then(openRates); };
@@ -973,7 +1388,7 @@ function openBackup() {
         }
         if (!o.accounts || !o.txns) throw new Error('bad');
         if (!confirm('سيتم استبدال كل البيانات الحالية بالنسخة. متابعة؟')) return;
-        db = o; save(); closeSheet(); toast('تمت الاستعادة');
+        db = migrate(o); save(); closeSheet(); toast('تمت الاستعادة');
       } catch (err) { toast('تعذّرت الاستعادة: الملف أو كلمة المرور غير صحيحة'); }
     };
     $('#bCsv').onchange = async e => { const f = e.target.files[0]; if (f) importCsv(await f.text()); };
@@ -1060,7 +1475,17 @@ $('#sheetClose').onclick = closeSheet;
 document.querySelector('.sheet-bg').onclick = closeSheet;
 $('#pinGo').onclick = tryUnlock;
 $('#pinIn').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
-$('#iosHintClose').onclick = () => { $('#iosHint').classList.add('hidden'); try { localStorage.setItem('mywallet.hint', '1'); } catch (e) { } };
+$('#settingsBtn').onclick = openSettings;
+// استقبال رسالة من اختصار iOS عبر الرابط: ...#sms=<نص الرسالة>
+function handleHash() {
+  const m = /[#&]sms=([^&]*)/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname);
+  reportIngest(ingestMessages(decodeURIComponent(m[1].replace(/\+/g, ' '))));
+  setTab('inbox');
+}
+window.addEventListener('hashchange', handleHash);
+$('#iosHintClose').onclick =() => { $('#iosHint').classList.add('hidden'); try { localStorage.setItem('mywallet.hint', '1'); } catch (e) { } };
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) hiddenAt = Date.now();
@@ -1072,8 +1497,22 @@ const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platfo
 let hintSeen = false; try { hintSeen = !!localStorage.getItem('mywallet.hint'); } catch (e) { }
 if (isIOS && !standalone && !hintSeen) $('#iosHint').classList.remove('hidden');
 
+// تذكير داخل التطبيق: لو عدّى وقت التذكير ومفيش حركات النهارده، يظهر إشعار مرة واحدة في اليوم
+async function checkReminder() {
+  const [h, m] = (db.prefs.reminderTime || '21:00').split(':').map(Number);
+  const now = new Date(); const today = fmtDate(now.getTime());
+  if (now.getHours() * 60 + now.getMinutes() < h * 60 + m || db.prefs.lastReminder === today) return;
+  if (db.txns.some(t => t.date >= new Date().setHours(0, 0, 0, 0))) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  db.prefs.lastReminder = today; save();
+  try { const reg = await navigator.serviceWorker.getRegistration(); reg.showNotification('محفظتي', { body: 'ماسجّلتش مصاريف النهارده، سجّلها دلوقتي 💰', icon: 'icons/icon-192.png', tag: 'daily' }); } catch (e) { }
+}
+setInterval(checkReminder, 60000);
+
 showLock();
 runRecurring();
 render();
+handleHash();
+setTimeout(checkReminder, 3000);
 if (Date.now() - (db.prefs.ratesUpdated || 0) > 12 * 3600000) refreshRates(false);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
