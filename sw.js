@@ -1,5 +1,5 @@
 // يخزّن ملفات التطبيق ليعمل بدون إنترنت. غيّر رقم الإصدار عند تعديل الملفات.
-const CACHE = 'mywallet-v20';
+const CACHE = 'mywallet-v21';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -21,7 +21,8 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // الشبكة أولاً حتى تصل التحديثات، ثم النسخة المخزنة عند انقطاع الإنترنت
   e.respondWith(
-    fetch(e.request).then(r => {
+    // no-cache: يتأكد من السيرفر كل مرة عشان التحديثات توصل على طول بدل ما تستنى كاش المتصفح
+    fetch(e.request, { cache: 'no-cache' }).then(r => {
       const copy = r.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return r;

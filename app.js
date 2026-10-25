@@ -2,6 +2,12 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
+const APP_VERSION = '21';
+// تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
+async function forceUpdate() {
+  try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
+  location.reload();
+}
 const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'SAR', 'AED', 'KWD', 'QAR', 'JOD', 'TRY'];
 const EMOJIS = ['🍽️', '☕', '🛒', '🚗', '🏠', '💡', '📱', '🎬', '🎮', '📚', '🎓', '💊', '🏥', '👕', '💄', '🎁', '✈️', '🏖️',
   '👨‍👩‍👧', '🐾', '🔧', '🧾', '💼', '💻', '📈', '💰', '💸', '🏦', '🔁', '🤲', '📦', '🍔', '🚌', '🎂', '🏧', '💳', '🎯'];
@@ -703,8 +709,9 @@ function renderMore() {
   const items = groups.flatMap(g => g[1]);
   let n = 0;
   view().innerHTML = groups.map(([title, list]) => `<div class="section-title">${title}</div><div class="card list menu">${list.map(x => `<div class="item" data-m="${n++}"><div class="ico blue">${ic(x[0])}</div><div class="grow"><div class="t">${x[1]}</div><div class="muted">${x[2]}</div></div><span class="chev">${ic('chevron')}</span></div>`).join('')}</div>`).join('') +
-    `<p class="muted" style="text-align:center">بياناتك محفوظة على هذا الجهاز فقط ولا تُرسل لأي خادم. خذ نسخة احتياطية بانتظام.</p>`;
+    `<p class="muted" style="text-align:center">الإصدار ${APP_VERSION} · <a href="#" id="mUpd">تحديث التطبيق</a></p><p class="muted" style="text-align:center">بياناتك محفوظة على هذا الجهاز فقط ولا تُرسل لأي خادم. خذ نسخة احتياطية بانتظام.</p>`;
   view().querySelectorAll('[data-m]').forEach(el => el.onclick = () => items[+el.dataset.m][3]());
+  $('#mUpd').onclick = e => { e.preventDefault(); forceUpdate(); };
 }
 
 // ================= بطاقات الائتمان والتقسيط =================
