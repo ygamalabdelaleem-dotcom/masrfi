@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '30';
+const APP_VERSION = '31';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -543,6 +543,7 @@ function renderHome() {
   bindUsualCard();
   const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), tr: () => openTxn(null, { type: 'TRANSFER' }), sms: () => setTab('inbox'),
     cards: () => setTab('cards'), savings: () => setTab('savings'), ctrl: () => setTab('ctrl'), voice: openVoice };
+  const hS = $('#hSpend'); if (hS) hS.onclick = () => openSpend();
   view().querySelectorAll('[data-cat]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.cat, period: 'MONTH' }; setTab('txns'); });
   if ($('#hSpeak')) $('#hSpeak').onclick = () => speak(dailyPlan().tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. '));
   $('#hMic').onclick = quickVoice;
@@ -1292,18 +1293,39 @@ const PIE_COLORS = ['#1e74d6', '#0f9d58', '#e37400', '#d93025', '#8e44ad', '#00a
 function spendCard(cats, exp, hide) {
   const rows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
   if (!rows.length || !(exp > 0)) return '';
-  const top = rows.slice(0, 5);
-  const rest = rows.slice(5).reduce((s, r) => s + r[1], 0);
-  if (rest > 0) top.push(['0', rest]);
-  let acc0 = 0;
-  const stops = top.map(([, v], i) => { const a = acc0; acc0 += v / exp * 100; return `${PIE_COLORS[i % PIE_COLORS.length]} ${a}% ${acc0}%`; }).join(',');
-  return `<div class="card">
-    <div class="row between"><h3>صرفت على إيه الشهر ده</h3><span class="muted num">${hide ? '••••' : money(exp)}</span></div>
-    <div class="spend">
-      <div class="donut" style="background:conic-gradient(${stops})"><div><b>${top.length}</b><span class="muted">تصنيفات</span></div></div>
-      <div class="spend-list">${top.map(([id, v], i) => { const c = cat(+id); const name = +id === 0 ? 'أخرى' : c ? lbl(c.name) : 'بدون تصنيف';
-        return `<div class="srow" ${+id > 0 ? `data-cat="${id}"` : ''}><span class="sw" style="background:${PIE_COLORS[i % PIE_COLORS.length]}"></span><span class="grow ellipsis">${c && +id > 0 ? c.icon + ' ' : ''}${esc(name)}</span><b class="num">${hide ? '••' : money(v)}</b><span class="muted pct">${(v / exp * 100).toFixed(0)}%</span></div>`; }).join('')}</div>
-    </div></div>`;
+  return `<button class="card spend-mini" id="hSpend">
+    <div class="row between"><h3>صرفت على إيه الشهر ده</h3><span class="muted num">${hide ? '••••' : money(exp)} ‹</span></div>
+    <div class="stack">${rows.slice(0, 6).map(([, v], i) => `<i style="width:${v / exp * 100}%;background:${PIE_COLORS[i % PIE_COLORS.length]}"></i>`).join('')}</div>
+    <div class="row muted" style="gap:10px;font-size:13px">${rows.slice(0, 4).map(([id, v]) => { const c = cat(+id); return `<span>${c ? c.icon : '•'} ${(v / exp * 100).toFixed(0)}%</span>`; }).join('')}<span class="grow"></span><span>التفاصيل</span></div>
+  </button>`;
+}
+// صفحة المصروفات: شارت في النص، تحته أيقونات التصنيفات، وتحتهم نسبة الصرف من الشهر
+function openSpend(off = 0) {
+  const [f, t] = monthRange(off); const list = inRange(f, t);
+  const [inc, exp] = typeTotals(list);
+  const cats = catTotals(list, 'EXPENSE');
+  const rows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+  let a0 = 0;
+  const stops = rows.map(([, v], i) => { const a = a0; a0 += v / (exp || 1) * 100; return `${PIE_COLORS[i % PIE_COLORS.length]} ${a}% ${a0}%`; }).join(',');
+  const now = new Date(); const dim = new Date(new Date(f).getFullYear(), new Date(f).getMonth() + 1, 0).getDate();
+  const dayN = off === 0 ? now.getDate() : dim; const timePct = dayN / dim * 100;
+  const incBase = inc || prof().salary || 0; const spentPct = incBase ? exp / incBase * 100 : null;
+  const pace = spentPct == null ? '' : spentPct > timePct + 5 ? `<div class="insight">صارف أسرع من الشهر: ${spentPct.toFixed(0)}% من الدخل في ${timePct.toFixed(0)}% من الشهر.</div>` : `<div class="insight">ماشي كويس: صرفك أقل من أو قد الوقت اللي عدّى من الشهر.</div>`;
+  const label = new Date(f).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+  sheet('صرفت على إيه', `
+    <div class="chips">${[0, -1, -2, -3].map(o => `<button class="chip ${o === off ? 'on' : ''}" data-sm="${o}">${new Date(monthRange(o)[0]).toLocaleDateString('ar-EG', { month: 'long' })}</button>`).join('')}</div>
+    ${exp > 0 ? `<div class="donut big" style="background:conic-gradient(${stops})"><div><span class="muted">${label}</span><b class="num">${money(exp)}</b><span class="muted">${base()}</span></div></div>
+    <div class="cat-grid">${rows.map(([id, v], i) => { const c = cat(+id); const col = PIE_COLORS[i % PIE_COLORS.length];
+      return `<button class="cg" ${+id ? `data-sc="${id}"` : ''}><span class="cg-ic" style="background:${col}22;border-color:${col}">${c ? c.icon : '•'}</span><span class="ellipsis">${c ? esc(lbl(c.name)) : 'بدون تصنيف'}</span><b class="num">${money(v)}</b><span class="pct" style="color:${col}">${(v / exp * 100).toFixed(0)}%</span></button>`; }).join('')}</div>` : '<div class="empty">مفيش مصاريف متسجلة في الشهر ده.</div>'}
+    <h3 style="margin-top:14px">نسبة الصرف من الشهر</h3>
+    <div class="row between"><span>من الدخل${inc ? '' : ' (المرتب)'}</span><b class="num">${spentPct == null ? '—' : spentPct.toFixed(0) + '%'}</b></div>
+    <div class="bar ${spentPct >= 90 ? 'over' : spentPct >= 70 ? 'warn' : ''}" style="height:10px"><i style="width:${Math.min(100, spentPct || 0)}%"></i></div>
+    <div class="row between" style="margin-top:10px"><span>من أيام الشهر</span><b class="num">${dayN} / ${dim} يوم (${timePct.toFixed(0)}%)</b></div>
+    <div class="bar" style="height:10px"><i style="width:${timePct}%;background:var(--muted)"></i></div>
+    ${pace}`, () => {
+    document.querySelectorAll('[data-sm]').forEach(b => b.onclick = () => openSpend(+b.dataset.sm));
+    document.querySelectorAll('[data-sc]').forEach(el => el.onclick = () => { closeSheetQuiet(); filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.sc, period: 'MONTH' }; setTab('txns'); });
+  });
 }
 
 // ================= الاقتراح اليومي =================
