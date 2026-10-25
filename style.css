@@ -339,3 +339,7 @@ svg.fc .a.warn { fill: color-mix(in srgb, var(--warn) 12%, transparent); } svg.f
 .section-title.row { margin-top: 14px; }
 svg.i.inl { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; }
 [data-play] svg.i { width: 18px; height: 18px; }
+.pos-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; margin-top: 12px; border: 0; padding: 0; background: none; color: #fff; text-align: right; }
+.pos-row > div { background: rgba(255,255,255,.1); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pos-row span { font-size: 11.5px; opacity: .75; }
+.pos-row b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; text-align: right; }

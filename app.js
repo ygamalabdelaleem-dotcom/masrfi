@@ -495,9 +495,12 @@ function renderHome() {
     <section class="band">
       <div class="greet">${greet}</div>
       <div class="bal-row">
-        <div><div class="label">إجمالي الرصيد</div><div class="big num">${m(total)} <small>${base()}</small></div></div>
+        <div><div class="label">الرصيد الحالي</div><div class="big num">${m(total)} <small>${base()}</small></div></div>
         <div class="row" style="gap:8px"><button class="eye" id="hMic" aria-label="المساعد الصوتي">${ic('mic')}</button><button class="eye" id="hEye" aria-label="إظهار أو إخفاء الرصيد">${ic(hide ? 'eyeOff' : 'eye')}</button></div>
       </div>
+      ${(() => { const ps = positions(); return `<button class="pos-row" id="hPos">
+        <div><span>بعد أقساط الشهر</span><b class="num">${m(ps.afterInst)}</b></div>
+        <div><span>صافي الرصيد (لك − عليك)</span><b class="num">${m(ps.net)}</b></div></button>`; })()}
       <div class="acc-scroll">${db.accounts.filter(a => !a.archived).map(a => `<button class="acc-card ${a.type === 'CREDIT' ? 'credit' : ''}" data-acc="${a.id}">
         <div class="row between"><span class="acc-ic">${accIcon(a)}</span><span class="acc-type">${ACC_TYPES[a.type] || ''}</span></div>
         <div class="acc-name ellipsis">${esc(lbl(a.name))}</div>
@@ -535,6 +538,7 @@ function renderHome() {
       <div class="list">${recent.length ? recent.map(txRow).join('') : '<div class="empty">لا توجد حركات بعد. اضغط ＋ لإضافة أول حركة.</div>'}</div></div>
   `;
   $('#hAcc').onclick = openAccounts;
+  $('#hPos').onclick = openPositions;
   $('#hAll').onclick = () => setTab('txns');
   if ($('#hRem')) $('#hRem').onclick = () => openTxn();
   if ($('#hUsual')) $('#hUsual').onclick = () => { const r = fillUsual([Date.now()]); toast(`اتسجّل ${money(r.total)} تقديري`); render(); };
@@ -1652,6 +1656,47 @@ async function checkRiskNotify() {
   try { const reg = await navigator.serviceWorker.getRegistration(); reg.showNotification('محفظتي: خطر سيولة', { body: a.text.replace(/<[^>]+>/g, ''), icon: 'icons/icon-192.png', tag: 'risk' }); } catch (e) { }
 }
 
+// ================= المركز المالي =================
+// الرصيد الحالي، وبعد أقساط الشهر، والصافي بعد كل اللي ليك واللي عليك (ديون وأقساط)
+function positions() {
+  const bal = balances();
+  const live = db.accounts.filter(a => !a.archived);
+  const total = live.reduce((s, a) => s + conv(bal[a.id] || 0, a.currency), 0);
+  const assets = live.filter(a => (bal[a.id] || 0) > 0).reduce((s, a) => s + conv(bal[a.id], a.currency), 0);
+  const cardOwed = -live.filter(a => (bal[a.id] || 0) < 0).reduce((s, a) => s + conv(bal[a.id], a.currency), 0);
+  const [, mEnd] = monthRange(0);
+  let instMonth = 0, instAll = 0;
+  db.installments.forEach(p => { const cur = (acc(p.cardId) || {}).currency || base();
+    planSummary(p).rows.slice(Math.min(p.paid || 0, 999)).forEach(r => { const v = conv(r.payment, cur); instAll += v; if (r.date <= mEnd) instMonth += v; }); });
+  const rem = d => conv(Math.max(0, d.amount - d.paid), d.currency);
+  const recv = db.debts.filter(d => d.lent).reduce((s, d) => s + rem(d), 0);
+  const pay = db.debts.filter(d => !d.lent).reduce((s, d) => s + rem(d), 0);
+  return { total, assets, cardOwed, instMonth, instAll, recv, pay, afterInst: total - instMonth, net: total + recv - pay - instAll };
+}
+function openPositions() {
+  const p = positions(); const r = (t, v, cls, sub) => `<tr${sub ? '' : ' class="next"'}><td>${t}</td><td class="num ${cls || ''}">${v < 0 ? `(${money(-v)})` : money(v)}</td></tr>`;
+  sheet('مركزك المالي', `
+    <div class="grid3"><div class="stat"><span class="muted">الرصيد الحالي</span><b class="num">${money(p.total)}</b></div>
+      <div class="stat"><span class="muted">بعد أقساط الشهر</span><b class="num">${money(p.afterInst)}</b></div>
+      <div class="stat"><span class="muted">صافي الرصيد</span><b class="num ${p.net >= 0 ? 'inc' : 'exp'}">${money(p.net)}</b></div></div>
+    <div class="table-wrap"><table class="tbl">
+      <tr><th>البند</th><th>المبلغ (${base()})</th></tr>
+      ${r('أرصدة الحسابات (نقدي، بنك، توفير، ذهب)', p.assets, 'inc', 1)}
+      ${r('مستحق على البطاقات', -p.cardOwed, 'exp', 1)}
+      ${r('= الرصيد الحالي', p.total)}
+      ${r('أقساط باقية الشهر ده', -p.instMonth, 'exp', 1)}
+      ${r('= الرصيد بعد أقساط الشهر', p.afterInst)}
+      ${r('أقساط الشهور الجاية', -(p.instAll - p.instMonth), 'exp', 1)}
+      ${r('ديون ليك (دائن)', p.recv, 'inc', 1)}
+      ${r('ديون عليك (مدين)', -p.pay, 'exp', 1)}
+      ${r('= صافي الرصيد', p.net)}
+    </table></div>
+    <p class="muted">صافي الرصيد = كل فلوسك، زائد الديون اللي ليك، ناقص الديون اللي عليك وكل الأقساط الباقية. ده مركزك الحقيقي لو سددت كل حاجة النهارده.</p>
+    <div class="btns"><button class="btn" id="posDebts">${ic('users')} الديون</button><button class="btn" id="posCards">${ic('card')} الأقساط</button></div>`, () => {
+    $('#posDebts').onclick = openDebts; $('#posCards').onclick = () => { closeSheet(); setTab('cards'); };
+  });
+}
+
 // ================= يومك العادي =================
 // بيتعلم صرفك اليومي المعتاد من الأيام اللي سجّلت فيها، عشان يكمّل الأيام اللي نسيت تسجّلها
 const dayKey = ms => fmtDate(dayStart(ms));
@@ -2113,6 +2158,10 @@ function handleVoice(text) {
       return { reply: `عندك ${ns.length} تقسيط بإجمالي ${n(tot)} في الشهر. أقرب قسط ${ns[0][0].name} بـ ${n(ns[0][1].payment)} يوم ${fmtDate(ns[0][1].date)}، وآخر قسط هيخلص ${fmtDate(last.end)}` };
     }
     if (/(مساعده|تقدر تعمل ايه|بتعمل ايه|اوامر)/.test(t)) return { reply: 'قول مثلاً: إزاي أضيف مصروف ثابت، جولة، صرفت 200 أكل، قبضت 5000، فاضلي كام، حالتي المالية، 500 جنيه تساوي كام ساعة، مصاريفي الثابتة، أكبر مصروف، قارن بالشهر اللي فات، توقع آخر الشهر، الميزانية، وفرت كام، أو اقتراح' };
+  }
+  if (/(صافي|بعد الاقساط|المركز المالي)/.test(t) && !/\d/.test(t)) {
+    const ps = positions();
+    return { reply: `رصيدك الحالي ${Math.round(ps.total)}، وبعد أقساط الشهر ${Math.round(ps.afterInst)}، وصافي رصيدك بعد كل الديون والأقساط ${Math.round(ps.net)}` };
   }
   if (/(رصيدي|رصيد|معايا كام)/.test(t) && !/\d/.test(t)) {
     const b = balances(); const tot = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(b[a.id] || 0, a.currency), 0);
