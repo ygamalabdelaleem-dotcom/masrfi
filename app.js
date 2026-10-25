@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '33';
+const APP_VERSION = '34';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1265,11 +1265,8 @@ function openSettings() {
     <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
     <h3 style="margin-top:16px">بياناتي المالية</h3>
     <div class="list menu"><div class="item" id="stProf"><div class="ico">💼</div><div class="grow">المرتب ويوم القبض وساعات الشغل</div><span class="muted">${hasProfile() ? money(prof().salary) + ' · يوم ' + prof().payday : 'غير محدد'} ‹</span></div></div>
-    <h3 style="margin-top:16px">التذكير اليومي</h3>
-    <label class="f">وقت التذكير</label><input class="in" type="time" id="stTime" value="${db.prefs.reminderTime || '21:00'}">
-    <button class="btn primary block" id="stIcs" style="margin-top:10px">📅 إضافة التذكير اليومي للتقويم</button>
-    <p class="muted">هيظهر لك تنبيه كل يوم في الوقت ده على الآيفون <b>وعلى ساعة أبل</b> كمان. اضغط «Add All» لما يظهر لك التقويم.</p>
-    ${notifOk ? `<button class="btn block" id="stNotif">🔔 تفعيل إشعارات التطبيق</button><p class="muted">على الآيفون محتاج تكون ضايف التطبيق للشاشة الرئيسية (iOS 16.4 أو أحدث).</p>` : ''}
+    <h3 style="margin-top:16px">الإشعارات</h3>
+    <div class="list menu"><div class="item" id="stNotifs"><div class="ico">🔔</div><div class="grow">أنواع الإشعارات ومواعيدها</div><span class="muted">${NOTIFS.filter(n => nSet(n.id).on).length} شغال ‹</span></div></div>
     ${voiceSettingsHtml()}
     <h3 style="margin-top:16px">رسائل البنك</h3>
     <label class="row"><input type="checkbox" id="stAuto" ${db.prefs.autoAddSms ? 'checked' : ''}> إضافة حركات الرسائل تلقائياً</label>
@@ -1283,19 +1280,7 @@ function openSettings() {
       <div class="item" id="stBackup"><div class="ico">💾</div><div class="grow">نسخ احتياطي واستعادة</div><span class="muted">‹</span></div>
     </div>`, () => {
     document.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setTheme(b.dataset.th); document.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
-    $('#stTime').onchange = e => { db.prefs.reminderTime = e.target.value; save(); };
-    $('#stIcs').onclick = () => {
-      db.prefs.reminderTime = $('#stTime').value || '21:00'; save();
-      const blob = new Blob([icsFor(db.prefs.reminderTime)], { type: 'text/calendar;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      if (isIOS) location.href = url; else shareOrDownload('masrfi-reminder.ics', blob);
-    };
-    if ($('#stNotif')) $('#stNotif').onclick = async () => {
-      const r = await Notification.requestPermission();
-      if (r === 'granted') { const reg = await navigator.serviceWorker?.getRegistration(); const opts = { body: 'هنفكّرك تسجّل مصاريفك لما تفتح التطبيق', icon: 'icons/icon-192.png' };
-        if (reg) reg.showNotification('محفظتي', opts); else new Notification('محفظتي', opts); toast('تم تفعيل الإشعارات'); }
-      else toast('الإشعارات مش مسموحة. فعّلها من إعدادات الآيفون');
-    };
+    $('#stNotifs').onclick = openNotifSettings;
     $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
     $('#stSmsHow').onclick = openSmsAutomation;
     $('#stProf').onclick = () => openOnboarding(true);
@@ -1897,6 +1882,154 @@ async function checkRiskNotify() {
   const a = riskAlerts().find(x => x.lvl === 'danger'); if (!a) return;
   db.prefs.lastRiskNote = today; save();
   try { const reg = await navigator.serviceWorker.getRegistration(); reg.showNotification('محفظتي: خطر سيولة', { body: a.text.replace(/<[^>]+>/g, ''), icon: 'icons/icon-192.png', tag: 'risk' }); } catch (e) { }
+}
+
+// ================= الإشعارات =================
+// كل نوع ليه تشغيل/إيقاف وإعداد (وقت أو أيام أو نسبة). الإشعار بيظهر على الموبايل لو مسموح، وبيتسجّل في صندوق الإشعارات جوه التطبيق.
+const NOTIFS = [
+  { id: 'daily', i: '📝', t: 'تذكير تسجيل المصاريف', d: 'لو ماسجّلتش ولا حركة لحد الوقت ده', set: { k: 'time', def: '21:00', l: 'الساعة' } },
+  { id: 'missed', i: '📅', t: 'أيام ماتسجلتش', d: 'لو فيه أيام فاتت من غير تسجيل', set: { k: 'num', def: 2, l: 'بعد كام يوم' } },
+  { id: 'risk', i: '🚨', t: 'خطر السيولة', d: 'لو رصيدك متوقع يخلص قبل القبض أو ينزل تحت حد الأمان' },
+  { id: 'overspend', i: '🔥', t: 'صرف النهارده عالي', d: 'لو صرفك النهارده عدّى المسموح اليومي' },
+  { id: 'big', i: '💸', t: 'مصروف كبير غير عادي', d: 'لو سجّلت مصروف أكبر من متوسط مصاريفك بكتير', set: { k: 'num', def: 3, l: 'أكبر من المتوسط بكام مرة' } },
+  { id: 'budget', i: '📊', t: 'تجاوز الميزانية', d: 'لما توصل لنسبة من ميزانية أي تصنيف', set: { k: 'num', def: 80, l: 'النسبة %' } },
+  { id: 'card', i: '💳', t: 'سداد البطاقة', d: 'قبل آخر ميعاد سداد للبطاقة', set: { k: 'num', def: 3, l: 'قبلها بكام يوم' } },
+  { id: 'cardUse', i: '📈', t: 'استخدام البطاقة', d: 'لو استخدام البطاقة عدّى نسبة من الحد', set: { k: 'num', def: 80, l: 'النسبة %' } },
+  { id: 'fixed', i: '📌', t: 'مصروف ثابت مستحق', d: 'الإيجار والفواتير والاشتراكات قبل ميعادها', set: { k: 'num', def: 1, l: 'قبلها بكام يوم' } },
+  { id: 'inst', i: '🧾', t: 'الأقساط', d: 'قسط جاي، أو تقسيط قرب يخلص', set: { k: 'num', def: 2, l: 'قبلها بكام يوم' } },
+  { id: 'debt', i: '🤝', t: 'الديون والسلف', d: 'دين عليك أو ليك ميعاده قرب', set: { k: 'num', def: 2, l: 'قبلها بكام يوم' } },
+  { id: 'payday', i: '💰', t: 'يوم القبض', d: 'تفكير بتوزيع المرتب وتحويل الادخار' },
+  { id: 'goal', i: '🎯', t: 'أهداف الادخار', d: 'لما توصل لهدف أو تقرب منه' },
+  { id: 'weekly', i: '🗓️', t: 'ملخص الأسبوع', d: 'صرفت كام الأسبوع ده مقارنة بالمسموح', set: { k: 'day', def: 5, l: 'اليوم' } },
+  { id: 'monthly', i: '📑', t: 'ملخص الشهر', d: 'أول يوم في الشهر: دخل ومصروف وادخار الشهر اللي فات' },
+];
+const WDAYS = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
+const nSet = id => { db.prefs.notif = db.prefs.notif || {}; const n = NOTIFS.find(x => x.id === id); const c = db.prefs.notif[id] || {};
+  return { on: c.on !== false, v: c.v != null && c.v !== '' ? c.v : id === 'daily' ? (db.prefs.reminderTime || n.set.def) : n.set ? n.set.def : null }; };
+const nUnread = () => (db.notifLog || []).filter(x => !x.read).length;
+function nBadge() { const b = $('#bellBtn'); if (!b) return; const n = nUnread(); b.innerHTML = ic('bell') + (n ? `<i class="nb">${n > 9 ? '9+' : n}</i>` : ''); }
+async function pushNote(key, title, body, go) {
+  db.prefs.nSent = db.prefs.nSent || {}; if (db.prefs.nSent[key]) return false;
+  db.prefs.nSent[key] = Date.now();
+  db.notifLog = db.notifLog || []; db.notifLog.unshift({ id: newId(), date: Date.now(), title, body, go: go || '', read: false }); db.notifLog.length = Math.min(db.notifLog.length, 60);
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try { const reg = await navigator.serviceWorker.getRegistration(); const o = { body, icon: 'icons/icon-192.png', tag: key };
+      if (reg) reg.showNotification(title, o); else new Notification(title, o); } catch (e) { }
+  }
+  return true;
+}
+// بيرجّع الإشعارات المستحقة دلوقتي، كل واحد بمفتاح فريد عشان مايتكررش
+function dueNotifs(now = Date.now()) {
+  const out = []; const t0 = dayStart(now); const today = fmtDate(now); const d = new Date(now);
+  const add = (id, key, title, body, go) => out.push({ key: id + ':' + key, title, body, go });
+  const on = id => nSet(id).on; const v = id => nSet(id).v;
+  const n0 = x => money(Math.round(x)).replace(/\.00$/, '');
+  const inDays = (ts, k) => { const di = Math.round((dayStart(ts) - t0) / DAY); return di >= 0 && di <= k ? di : -1; };
+  const when = di => di === 0 ? 'النهارده' : di === 1 ? 'بكرة' : di === 2 ? 'بعد يومين' : `بعد ${di} أيام`;
+  if (on('daily')) { const [h, m] = String(v('daily')).split(':').map(Number);
+    if (d.getHours() * 60 + d.getMinutes() >= h * 60 + m && !db.txns.some(t => t.date >= t0) && !noSpend().includes(dayKey(now))) add('daily', today, '📝 سجّل مصاريف النهارده', 'ماسجّلتش ولا حركة النهارده. سجّلها دلوقتي عشان حساباتك تفضل مظبوطة.', 'home'); }
+  if (on('missed')) { const md = missedDays(); if (md.length >= +v('missed')) add('missed', today, '📅 فيه أيام ماتسجلتش', `فيه ${md.length} يوم من غير مصاريف متسجلة. افتح وسجّلهم أو استخدم «يومي العادي».`, 'home'); }
+  const prof0 = hasProfile(); const cp = prof0 && (on('risk') || on('overspend') || on('weekly')) ? cashPlan() : null;
+  if (cp && on('risk')) { const a = riskAlerts(cp).find(x => x.lvl === 'danger'); if (a) add('risk', today, '🚨 خطر سيولة', a.text.replace(/<[^>]+>/g, ''), 'ctrl'); }
+  if (cp && on('overspend') && cp.safeDaily >= 0 && cp.todayVar > cp.safeDaily && cp.todayVar > 0) add('overspend', today, '🔥 صرفت كتير النهارده', `صرفت ${n0(cp.todayVar)} والمسموح ${n0(cp.safeDaily)} في اليوم لحد القبض.`, 'ctrl');
+  if (on('big')) { const ex = db.txns.filter(t => t.type === 'EXPENSE' && !isFixedTxn(t) && t.date >= t0 - 90 * DAY && t.date < t0);
+    const avg = ex.length >= 10 ? ex.reduce((s0, t) => s0 + conv(t.amount, txCur(t)), 0) / ex.length : 0;
+    if (avg) db.txns.filter(t => t.type === 'EXPENSE' && !isFixedTxn(t) && t.date >= t0 - DAY && conv(t.amount, txCur(t)) > avg * +v('big')).forEach(t =>
+      add('big', t.id, '💸 مصروف كبير', `${t.merchant || lbl((cat(t.categoryId) || {}).name || '')} ${n0(conv(t.amount, txCur(t)))}، ده ${Math.round(conv(t.amount, txCur(t)) / avg)} أضعاف متوسط مصروفك.`, 'txns')); }
+  if (on('budget')) { const [f, t] = monthRange(0); const cats = catTotals(inRange(f, t), 'EXPENSE'); const th = +v('budget');
+    db.categories.filter(c => c.monthlyBudget > 0).forEach(c => { const p = (cats[c.id] || 0) / c.monthlyBudget * 100;
+      if (p >= 100) add('budget', `${c.id}:${fmtDate(f)}:100`, '📊 ميزانية خلصت', `عدّيت ميزانية ${lbl(c.name)}: صرفت ${n0(cats[c.id])} من ${n0(c.monthlyBudget)}.`, 'home');
+      else if (p >= th) add('budget', `${c.id}:${fmtDate(f)}:${th}`, '📊 قربت من الميزانية', `صرفت ${Math.round(p)}% من ميزانية ${lbl(c.name)}.`, 'home'); }); }
+  if (on('card') || on('cardUse')) cardsSummary(...monthRange(0)).forEach(c => {
+    if (on('card') && c.due && c.due.amt > 0) { const di = inDays(c.due.date, +v('card')); if (di >= 0) add('card', `${c.a.id}:${fmtDate(c.due.date)}:${di === 0 ? 0 : 1}`, '💳 سداد البطاقة', `مطلوب ${n0(c.due.amt)} لبطاقة ${lbl(c.a.name)} ${when(di)} (${ltr(fmtDate(c.due.date))}).`, 'cards'); }
+    if (on('cardUse') && c.lim && c.used >= +v('cardUse')) add('cardUse', `${c.a.id}:${today.slice(0, 7)}`, '📈 استخدام البطاقة عالي', `مستخدم ${Math.round(c.used)}% من حد بطاقة ${lbl(c.a.name)}. المتاح ${n0(c.avail)}.`, 'cards'); });
+  if (on('fixed')) { const k = +v('fixed');
+    db.recurring.filter(r => r.active && r.type === 'EXPENSE' && acc(r.accountId)).forEach(r => occurrences(r, t0, t0 + (k + 1) * DAY - 1).forEach(ts => { const di = inDays(ts, k);
+      if (di >= 0) add('fixed', `${r.id}:${fmtDate(ts)}`, '📌 مصروف ثابت', `${r.merchant || lbl((cat(r.categoryId) || {}).name || '')} ${n0(conv(r.amount, recCur(r)))} ${when(di)}.`, 'ctrl'); })); }
+  if (on('inst')) { const k = +v('inst');
+    db.installments.forEach(pl => { const nx = nextInstallment(pl); if (!nx) return; const di = inDays(nx.date, k);
+      if (di >= 0) add('inst', `${pl.id}:${nx.i}`, '🧾 قسط جاي', `قسط ${pl.name} ${n0(nx.payment)} ${when(di)}.`, 'cards');
+      const pd = planDates(pl); if (pd.left === 1) add('inst', `${pl.id}:last`, '🎉 آخر قسط', `ده آخر قسط في «${pl.name}». من الشهر الجاي هيوفّرلك ${n0(nx.payment)}، وجّههم للادخار.`, 'cards'); }); }
+  if (on('debt')) { const k = +v('debt');
+    db.debts.filter(x => x.dueDate && x.paid < x.amount).forEach(x => { const di = inDays(x.dueDate, k); const late = dayStart(x.dueDate) < t0;
+      if (di >= 0 || late) add('debt', `${x.id}:${late ? 'late:' + today : di === 0 ? 0 : 1}`, x.lent ? '🤝 فلوس ليك' : '🤝 دين عليك', `${x.lent ? `${x.person} عليه ليك` : `عليك لـ ${x.person}`} ${n0(x.amount - x.paid)} ${late ? 'وميعاده عدّى' : when(di)}.`, 'more'); }); }
+  if (on('payday') && prof0 && prof().salary > 0) { const c = payCycle(); if (dayStart(c.last) === t0) { const a = allocation();
+    add('payday', today, '💰 النهارده يوم القبض', `حوّل ${n0(a.save)} للادخار الأول، وسيب ${n0(a.fixed)} للثابت، والباقي ${n0(a.free)} مصروفك (≈ ${n0(a.perDay)} في اليوم).`, 'ctrl'); } }
+  if (on('goal')) db.goals.forEach(g => { if (!(g.target > 0)) return; const p = g.saved / g.target * 100;
+    if (p >= 100) add('goal', `${g.id}:100`, '🎯 هدف اتحقق', `مبروك! وصلت لهدف «${g.name}».`, 'more');
+    else if (p >= 80) add('goal', `${g.id}:80`, '🎯 قربت من هدفك', `وصلت ${Math.round(p)}% من هدف «${g.name}». فاضل ${n0(g.target - g.saved)}.`, 'more'); });
+  if (on('weekly') && d.getDay() === +v('weekly') && d.getHours() >= 18) {
+    const wk = db.txns.filter(t => t.type === 'EXPENSE' && t.date >= t0 - 6 * DAY).reduce((s0, t) => s0 + conv(t.amount, txCur(t)), 0);
+    add('weekly', today, '🗓️ ملخص الأسبوع', `صرفت ${n0(wk)} آخر 7 أيام${cp ? `، والمسموح ليك حوالي ${n0(cp.safeDaily * 7)} في الأسبوع` : ''}.`, 'reports'); }
+  if (on('monthly') && d.getDate() === 1) { const [f, t] = monthRange(-1); const [inc, exp] = typeTotals(inRange(f, t));
+    add('monthly', fmtDate(f), '📑 ملخص الشهر اللي فات', `دخل ${n0(inc)}، مصروف ${n0(exp)}${inc ? `، ادخرت ${Math.round((inc - exp) / inc * 100)}%` : ''}.`, 'ctrl'); }
+  return out;
+}
+let nBusy = false;
+async function checkNotifs() {
+  if (nBusy) return; nBusy = true;
+  try { let n = 0; for (const x of dueNotifs()) if (await pushNote(x.key, x.title, x.body, x.go)) n++;
+    // تنضيف المفاتيح القديمة
+    const lim = Date.now() - 120 * DAY; Object.keys(db.prefs.nSent || {}).forEach(k => { if (db.prefs.nSent[k] < lim) delete db.prefs.nSent[k]; });
+    if (n) { save(); nBadge(); } } catch (e) { console.error(e); }
+  nBusy = false;
+}
+function openNotifs() {
+  const log = db.notifLog || [];
+  sheet('الإشعارات', `
+    ${log.length ? `<div class="list">${log.map(x => `<div class="item ${x.read ? '' : 'unread'}" data-ngo="${x.go}"><div class="grow"><b>${esc(x.title)}</b><div class="muted">${esc(x.body)}</div><div class="muted" style="font-size:11.5px">${ltr(new Date(x.date).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}</div></div></div>`).join('')}</div>` : '<div class="empty">مفيش إشعارات لسه.</div>'}
+    <div class="btns"><button class="btn" id="nSet">⚙️ إعدادات الإشعارات</button>${log.length ? '<button class="btn" id="nClr">مسح الكل</button>' : ''}</div>`, () => {
+    log.forEach(x => x.read = true); save(); nBadge();
+    document.querySelectorAll('[data-ngo]').forEach(el => el.onclick = () => { const g = el.dataset.ngo; if (g) { closeSheetQuiet(); setTab(g); } });
+    $('#nSet').onclick = openNotifSettings;
+    if ($('#nClr')) $('#nClr').onclick = () => { db.notifLog = []; save(); openNotifs(); };
+  });
+}
+function openNotifSettings() {
+  const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+  const ctl = n => { if (!n.set) return ''; const val = nSet(n.id).v;
+    if (n.set.k === 'time') return `<input class="in sm" type="time" data-nv="${n.id}" value="${val}">`;
+    if (n.set.k === 'day') return `<select class="in sm" data-nv="${n.id}">${WDAYS.map((w, i) => `<option value="${i}" ${+val === i ? 'selected' : ''}>${w}</option>`).join('')}</select>`;
+    return `<input class="in sm num" inputmode="numeric" data-nv="${n.id}" value="${val}">`; };
+  sheet('إعدادات الإشعارات', `
+    ${perm === 'granted' ? '<div class="insight"><div class="grow">✅ إشعارات الموبايل شغالة.</div></div>' : perm === 'unsupported' ? '<div class="insight"><div class="grow">المتصفح ده مش بيدعم الإشعارات. الإشعارات هتظهر جوه التطبيق في 🔔 بس. على الآيفون ضيف التطبيق للشاشة الرئيسية الأول.</div></div>' : '<button class="btn primary block" id="nPerm">🔔 تفعيل إشعارات الموبايل</button>'}
+    <div class="row" style="gap:8px;margin:10px 0"><button class="btn small" id="nAllOn">تشغيل الكل</button><button class="btn small" id="nAllOff">إيقاف الكل</button><button class="btn small" id="nTest">جرّب إشعار</button></div>
+    <div class="list nset">${NOTIFS.map(n => { const c = nSet(n.id); return `<div class="item"><div class="ico">${n.i}</div><div class="grow"><b>${n.t}</b><div class="muted">${n.d}</div>
+      ${n.set ? `<label class="row muted" style="gap:8px;margin-top:6px;font-size:12.5px;white-space:nowrap">${n.set.l} ${ctl(n)}</label>` : ''}</div>
+      <label class="sw-t"><input type="checkbox" data-non="${n.id}" ${c.on ? 'checked' : ''}><span></span></label></div>`; }).join('')}</div>
+    <h3 style="margin-top:14px">لما التطبيق يكون مقفول</h3>
+    <p class="muted">الآيفون مش بيسمح لتطبيقات الويب تبعت إشعار وهي مقفولة خالص. عشان كده تقدر تضيف المواعيد المهمة (تذكير التسجيل، سداد البطاقات، الأقساط، المصاريف الثابتة، يوم القبض) لتقويم الآيفون، وهي تنبّهك في ميعادها حتى على ساعة أبل.</p>
+    <button class="btn block" id="nIcs">📅 إضافة المواعيد للتقويم</button>`, () => {
+    db.prefs.notif = db.prefs.notif || {};
+    const setP = (id, k, val) => { db.prefs.notif[id] = { ...(db.prefs.notif[id] || {}), [k]: val }; if (id === 'daily' && k === 'v') db.prefs.reminderTime = val; save(); };
+    document.querySelectorAll('[data-non]').forEach(el => el.onchange = () => setP(el.dataset.non, 'on', el.checked));
+    document.querySelectorAll('[data-nv]').forEach(el => el.onchange = () => setP(el.dataset.nv, 'v', el.type === 'time' ? el.value : +el.value || 0));
+    $('#nAllOn').onclick = () => { NOTIFS.forEach(n => setP(n.id, 'on', true)); openNotifSettings(); };
+    $('#nAllOff').onclick = () => { NOTIFS.forEach(n => setP(n.id, 'on', false)); openNotifSettings(); };
+    $('#nTest').onclick = async () => { await pushNote('test:' + Date.now(), '🔔 محفظتي', 'كده الإشعارات شغالة تمام.', ''); save(); nBadge(); toast('اتبعت إشعار تجريبي'); };
+    if ($('#nPerm')) $('#nPerm').onclick = async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'تم تفعيل الإشعارات' : 'الإشعارات مش مسموحة. فعّلها من إعدادات الآيفون'); openNotifSettings(); };
+    $('#nIcs').onclick = () => { const blob = new Blob([icsAll()], { type: 'text/calendar;charset=utf-8' });
+      if (isIOS) location.href = URL.createObjectURL(blob); else shareOrDownload('masrfi-reminders.ics', blob); };
+  });
+}
+// ملف تقويم فيه التذكير اليومي + المواعيد المالية الجاية (60 يوم)
+function icsAll() {
+  const pad = x => String(x).padStart(2, '0');
+  const dt = (ts, h = 10, m = 0) => { const d = new Date(ts); return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(h)}${pad(m)}00`; };
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const esc2 = x => String(x).replace(/[,;\\]/g, m => '\\' + m).replace(/\n/g, ' ');
+  const ev = []; const t0 = dayStart(Date.now()); const end = t0 + 60 * DAY;
+  const add = (uid, ts, title, alarmDaysBefore = 0, rrule) => ev.push(['BEGIN:VEVENT', `UID:masrfi-${uid}@${location.host || 'local'}`, `DTSTAMP:${stamp}`, `DTSTART:${dt(ts)}`, 'DURATION:PT15M', ...(rrule ? [rrule] : []),
+    `SUMMARY:${esc2(title)}`, `URL:${APP_URL}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `TRIGGER:${alarmDaysBefore ? `-P${alarmDaysBefore}D` : 'PT0M'}`, `DESCRIPTION:${esc2(title)}`, 'END:VALARM', 'END:VEVENT'].join('\r\n'));
+  const n0 = x => money(Math.round(x)).replace(/\.00$/, '');
+  if (nSet('daily').on) { const [h, m] = String(nSet('daily').v).split(':').map(Number); ev.push(['BEGIN:VEVENT', `UID:masrfi-daily-reminder@${location.host || 'local'}`, `DTSTAMP:${stamp}`, `DTSTART:${dt(t0, h, m)}`, 'DURATION:PT5M', 'RRULE:FREQ=DAILY',
+    'SUMMARY:💰 سجّل مصاريف النهارده في محفظتي', `URL:${APP_URL}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:PT0M', 'DESCRIPTION:سجّل مصاريف النهارده', 'END:VALARM', 'END:VEVENT'].join('\r\n')); }
+  if (nSet('card').on) cardsSummary(...monthRange(0)).forEach(c => { if (c.due && c.due.amt > 0) add(`card-${c.a.id}-${fmtDate(c.due.date)}`, c.due.date, `💳 سداد ${lbl(c.a.name)}: ${n0(c.due.amt)}`, +nSet('card').v || 0); });
+  if (nSet('inst').on) db.installments.forEach(pl => planSummary(pl).rows.slice(pl.paid || 0).filter(r => r.date <= end).forEach(r => add(`inst-${pl.id}-${r.i}`, r.date, `🧾 قسط ${pl.name}: ${n0(r.payment)}`)));
+  if (nSet('fixed').on) db.recurring.filter(r => r.active && r.type === 'EXPENSE' && acc(r.accountId)).forEach(r => occurrences(r, t0, end).slice(0, 8).forEach(ts => add(`fx-${r.id}-${fmtDate(ts)}`, ts, `📌 ${r.merchant || lbl((cat(r.categoryId) || {}).name || '')}: ${n0(conv(r.amount, recCur(r)))}`, +nSet('fixed').v || 0)));
+  if (nSet('debt').on) db.debts.filter(x => x.dueDate && x.paid < x.amount && x.dueDate >= t0).forEach(x => add(`debt-${x.id}`, x.dueDate, `🤝 ${x.lent ? x.person + ' عليه ليك' : 'عليك لـ ' + x.person}: ${n0(x.amount - x.paid)}`, +nSet('debt').v || 0));
+  if (nSet('payday').on && hasProfile() && prof().salary > 0) add('payday', payCycle().next, '💰 يوم القبض: وزّع المرتب وحوّل الادخار', 0, 'RRULE:FREQ=MONTHLY');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//masrfi//MyWallet//AR', 'CALSCALE:GREGORIAN', ...ev, 'END:VCALENDAR'].join('\r\n');
 }
 
 // ================= المركز المالي =================
@@ -3064,6 +3197,7 @@ $('#vfab').onclick = quickVoice;
 $('#faceGo').innerHTML = ic('faceid') + '<span>فتح بـ Face ID</span>';
 $('#pinIn').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
 $('#settingsBtn').onclick = openSettings;
+$('#bellBtn').onclick = openNotifs;
 $('#settingsBtn').innerHTML = ic('settings');
 $('#back').innerHTML = ic('back');
 const TAB_ICONS = { home: 'home', txns: 'list', add: 'plus', reports: 'chart', more: 'grid' };
@@ -3114,15 +3248,16 @@ async function checkReminder() {
   db.prefs.lastReminder = today; save();
   try { const reg = await navigator.serviceWorker.getRegistration(); reg.showNotification('محفظتي', { body: 'ماسجّلتش مصاريف النهارده، سجّلها دلوقتي 💰', icon: 'icons/icon-192.png', tag: 'daily' }); } catch (e) { }
 }
-setInterval(checkReminder, 60000);
+setInterval(checkNotifs, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNotifs(); });
 
 showLock();
 runRecurring();
 runInstallments();
 render();
 handleHash();
-setTimeout(checkReminder, 3000);
-setTimeout(checkRiskNotify, 4000);
+setTimeout(checkNotifs, 3000);
+nBadge();
 if (!db.profile.done && !db.profile.skipped) openOnboarding();
 if (Date.now() - (db.prefs.ratesUpdated || 0) > 12 * 3600000) refreshRates(false);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
