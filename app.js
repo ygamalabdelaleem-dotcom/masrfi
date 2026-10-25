@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '46';
+const APP_VERSION = '47';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2364,7 +2364,7 @@ function speak(text, onEnd, plain) {
     keepAudio(true);
     const done = () => { curUtter = null; keepAudio(false); onEnd && onEnd(); };
     const say1 = () => {
-      if (token !== speak.token) return;
+      if (token !== speak.token) { keepAudio(false); return; }
       if (i >= parts.length) return done();
       const u = new SpeechSynthesisUtterance(parts[i]);
       try { if (v) u.voice = v; } catch (e) { }
@@ -2749,12 +2749,21 @@ function voiceBubble(state, text, undoId, go) {
   }
 }
 // الآيفون مش بيقفل المايك لوحده لما تسكت: بنقفله بعد 6 ثواني لو ماسمعناش حاجة، وبعد ثانيتين سكوت بعد الكلام، وأقصى حاجة 20 ثانية
+// كل مايك شغال بيتسجّل هنا عشان نقفله أكيد (الآيفون ساعات بيسيب علامة التسجيل شغالة لو اكتفينا بـ stop)
+const liveRecs = new Set();
+function killMics() { liveRecs.forEach(r => { try { r.abort(); } catch (e) { } }); liveRecs.clear(); }
 function micTimers(r) {
-  let t = null; const cap = setTimeout(() => { try { r.stop(); } catch (e) { } }, 20000);
-  const arm = ms => { clearTimeout(t); t = setTimeout(() => { try { r.stop(); } catch (e) { } }, ms); };
+  liveRecs.add(r);
+  const end = () => { try { r.stop(); } catch (e) { } setTimeout(() => { if (liveRecs.has(r)) { try { r.abort(); } catch (e) { } liveRecs.delete(r); } }, 1200); };
+  let t = null; const cap = setTimeout(end, 20000);
+  const arm = ms => { clearTimeout(t); t = setTimeout(end, ms); };
   arm(6000);
-  return { heard: () => arm(2000), clear: () => { clearTimeout(t); clearTimeout(cap); } };
+  return { heard: () => arm(2000), clear: () => { clearTimeout(t); clearTimeout(cap); liveRecs.delete(r); } };
 }
+window.addEventListener('pagehide', killMics);
+document.addEventListener('visibilitychange', () => { if (document.hidden) { killMics(); keepAudio(false); try { speechSynthesis.cancel(); } catch (e) { } } });
+// صمام أمان: الصوت الفاضي اللي بيخلّي الكلام يطلع في الوضع الصامت مايفضلش شغال
+setInterval(() => { if (keepAlive && !keepAlive.paused && !(window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending))) keepAudio(false); }, 3000);
 function quickVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return openVoice();
@@ -2891,7 +2900,7 @@ function openChat(listen) {
   // الصوت أساسي: أول ما الشات يفتح من المايك يبدأ يسمع على طول (لازم يحصل جوه نفس اللمسة)
   if (listen === true && SR) $('#cMic').onclick(); else if (!SR) $('#cIn').focus();
 }
-function closeChat() { const el = $('#chat'); if (!el) return; if (chatRec) try { chatRec.abort(); } catch (e) { } el.classList.add('hidden'); document.body.style.overflow = ''; }
+function closeChat() { const el = $('#chat'); if (!el) return; killMics(); chatRec = null; el.classList.add('hidden'); document.body.style.overflow = ''; }
 
 // ================= النوافذ =================
 function sheet(title, html, onReady) {
@@ -2901,7 +2910,7 @@ function sheet(title, html, onReady) {
   document.body.style.overflow = 'hidden';
   if (onReady) onReady($('#sheetBody'));
 }
-function closeSheet() { $('#sheet').classList.add('hidden'); document.body.style.overflow = ''; render(); }
+function closeSheet() { killMics(); $('#sheet').classList.add('hidden'); document.body.style.overflow = ''; render(); }
 
 const accOptions = (sel, filterFn = () => true) => db.accounts.filter(a => !a.archived || a.id === sel).filter(filterFn).map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(lbl(a.name))} (${a.currency})</option>`).join('');
 const catOptions = (income, sel) => `<option value="">بدون تصنيف</option>` + db.categories.filter(c => c.isIncome === income).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.icon} ${esc(lbl(c.name))}</option>`).join('');
@@ -3477,6 +3486,7 @@ async function openPin() {
 let fails = 0, blockedUntil = 0;
 function showLock() {
   if (!db.prefs.pinHash) return;
+  killMics();
   $('#lock').classList.remove('hidden'); $('#pinIn').value = ''; $('#pinErr').textContent = '';
   const bio = !!db.prefs.bioCred;
   $('#faceGo').classList.toggle('hidden', !bio);
