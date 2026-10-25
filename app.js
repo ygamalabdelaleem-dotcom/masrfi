@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '29';
+const APP_VERSION = '30';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -519,16 +519,6 @@ function renderHome() {
     ${riskCard(hide)}
     ${usualCard()}
     ${showReminder ? `<div class="card reminder"><div class="row"><span class="ib warn">${ic('bell')}</span><div class="grow"><b>ماسجّلتش مصاريف النهارده</b><div class="muted">سجّلها دلوقتي عشان تفضل حساباتك مظبوطة</div></div><button class="btn small primary" id="hRem">إضافة</button></div>${usualDay().total ? `<div class="btns"><button class="btn small" id="hUsual">سجّل يومي العادي (≈ ${money(usualDay().total).replace(/\.00$/, '')})</button><button class="btn small" id="hNone">ماصرفتش حاجة</button></div>` : ''}</div>` : ''}
-    <div class="card">
-      <div class="row between"><h3>ملخص الشهر</h3><span class="muted">${new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</span></div>
-      <div class="sum3">
-        <div><span class="dot inc-bg"></span><span class="muted">الدخل</span><b class="num">${m(inc)}</b></div>
-        <div><span class="dot exp-bg"></span><span class="muted">المصروف</span><b class="num">${m(exp)}</b></div>
-        <div><span class="dot pri-bg"></span><span class="muted">الادخار</span><b class="num">${savedPct == null ? '—' : savedPct.toFixed(0) + '%'}</b></div>
-      </div>
-      <div class="bar ${expPct >= 90 ? 'over' : expPct >= 70 ? 'warn' : ''}" style="height:10px"><i style="width:${expPct}%"></i></div>
-      <div class="muted" style="margin-top:6px">${inc > 0 ? `صرفت ${expPct.toFixed(0)}% من دخلك الشهر ده` : 'سجّل دخلك عشان تشوف نسبة الصرف'}</div>
-    </div>
     ${planCard(hide)}
     ${spendCard(cats, exp, hide)}
     ${ins.length ? `<div class="card"><h3>رؤى ذكية</h3>${ins.join('')}</div>` : ''}
@@ -1986,7 +1976,7 @@ const HELP = [
 ];
 // شرح الشاشة المفتوحة دلوقتي
 const SCREEN_HELP = {
-  home: 'دي الرئيسية: فوق رصيدك وحساباتك، وتحتها اختصارات، وبعدين حالة السيولة، وملخص الشهر، واقتراح النهارده بالمبلغ اللي تقدر تصرفه، وآخر الحركات.',
+  home: 'دي الرئيسية: فوق رصيدك وحساباتك، وتحتها اختصارات، وبعدين حالة السيولة، واقتراح النهارده بالمبلغ اللي تقدر تصرفه، وآخر الحركات.',
   txns: 'دي الحركات: كل اللي سجّلته، وتقدر تدوّر وتفلتر بالفترة أو الحساب أو التصنيف، واضغط على أي حركة تعدّلها.',
   reports: 'دي التقارير: صرفك حسب التصنيف، وآخر 12 شهر، وأكبر المصروفات، وزرار التقرير الشهري بشكل قائمة دخل.',
   more: 'دي المزيد: فيها الحسابات، والمصاريف الثابتة، والديون، والأهداف، والإعدادات، والنسخ الاحتياطي.',
