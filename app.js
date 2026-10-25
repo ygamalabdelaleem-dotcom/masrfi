@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '27';
+const APP_VERSION = '28';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -473,7 +473,8 @@ function renderHome() {
   const due = db.debts.filter(d => d.dueDate && d.paid < d.amount && d.dueDate - Date.now() < 3 * DAY).length;
   if (due) ins.push(insH('users', `لديك ${due} دين مستحق قريباً`, true));
   db.accounts.filter(a => a.type === 'CREDIT' && !a.archived && a.dueDay).forEach(a => {
-    const owed = -(bal[a.id] || 0); const left = daysUntilDay(a.dueDay);
+    const st = stmtLeft(a);
+    const owed = st ? st.left : -(bal[a.id] || 0); const left = st ? Math.round((dayStart(st.date) - dayStart(Date.now())) / DAY) : daysUntilDay(a.dueDay);
     if (owed > 0 && left <= 5) ins.push(insH('card', `موعد سداد ${esc(lbl(a.name))} بعد ${left === 0 ? 'النهارده' : left + ' يوم'}: <b class="num">${money(owed)}</b> ${a.currency}`, true));
   });
   db.installments.forEach(p => {
@@ -715,6 +716,12 @@ function renderMore() {
 }
 
 // ================= بطاقات الائتمان والتقسيط =================
+// مبلغ الكشف المطلوب سداده (من البنك) ناقص اللي اتسدد على البطاقة من ساعة ما اتسجّل
+function stmtLeft(a) {
+  if (!(a && +a.stmtDue > 0 && a.stmtDate && a.stmtDate >= dayStart(Date.now()))) return null;
+  const paid = db.txns.filter(t => t.type === 'TRANSFER' && t.toAccountId === a.id && t.date >= (a.stmtSetAt || 0)).reduce((s0, t) => s0 + (t.toAmount ?? t.amount), 0);
+  return { left: Math.max(0, a.stmtDue - paid), date: a.stmtDate, paid };
+}
 function daysUntilDayFrom(day, from) {
   const now = new Date(dayStart(from));
   let d = new Date(now.getFullYear(), now.getMonth(), Math.min(day, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()));
@@ -811,6 +818,8 @@ function renderCards() {
         <div class="row between" style="margin-top:14px"><div><div class="muted">المستخدم</div><div class="big2 num">${money(owed)}</div></div>
           ${lim ? `<div style="text-align:left"><div class="muted">المتاح</div><div class="big2 num">${money(Math.max(0, lim - owed - blocked))}</div></div>` : ''}</div>
         ${lim ? `<div class="bar light ${p >= 80 ? 'over' : p >= 50 ? 'warn' : ''}"><i style="width:${Math.min(100, p)}%"></i></div><div class="muted" style="margin-top:4px">${p.toFixed(0)}% من الحد ${money(lim)} ${a.currency}${p >= 30 ? ' · يُفضّل إبقاء الاستخدام أقل من 30%' : ''}</div>` : ''}
+        ${stmtLeft(a) ? (() => { const st = stmtLeft(a); const dl = Math.round((dayStart(st.date) - dayStart(Date.now())) / DAY);
+          return `<div class="row between" style="margin-top:10px;background:rgba(255,255,255,.12);border-radius:12px;padding:8px 10px"><div><div class="muted">مطلوب سداده ${st.paid ? '(باقي)' : ''}</div><b class="num">${money(st.left)}</b></div><div style="text-align:left"><div class="muted">قبل</div><b class="num">${fmtDate(st.date)}</b> <small class="muted">(${dl} يوم)</small></div></div>`; })() : ''}
         <div class="muted" style="margin-top:6px">${a.statementDay ? `كشف الحساب يوم ${a.statementDay}` : ''}${a.dueDay ? ` · آخر موعد سداد يوم ${a.dueDay} (بعد ${daysUntilDay(a.dueDay)} يوم)` : ''}${blocked ? ` · أقساط متبقية ${money(blocked)}` : ''}</div>
         <div class="btns"><button class="btn small" data-pay="${a.id}">سداد البطاقة</button><button class="btn small" data-plan="${a.id}">تقسيط جديد</button><button class="btn small" data-edit="${a.id}">تعديل</button></div>
       </div>`;
@@ -836,7 +845,7 @@ function renderCards() {
     <div class="btns"><button class="btn primary" id="plImg">📷 تقسيط من صورة البنك</button><button class="btn" id="plNew">＋ خطة تقسيط</button></div>
     <p class="muted">تقدر تختار كذا صورة مرة واحدة، وكل صورة بتتحوّل لتقسيط. لو التقسيط موجود بيتحدّث بس.</p>`;
   view().querySelectorAll('[data-pay]').forEach(b => b.onclick = () => {
-    const a = acc(+b.dataset.pay); const owed = Math.max(0, -(balances()[a.id] || 0));
+    const a = acc(+b.dataset.pay); const st = stmtLeft(a); const owed = st ? st.left : Math.max(0, -(balances()[a.id] || 0));
     const from = db.accounts.find(x => x.type !== 'CREDIT' && x.currency === a.currency && !x.archived);
     openTxn(null, { type: 'TRANSFER', amount: owed || '', accountId: from ? from.id : a.id, toAccountId: a.id, merchant: 'سداد ' + lbl(a.name) });
   });
@@ -1441,7 +1450,12 @@ function cashPlan() {
   db.installments.forEach(pl => { const card = acc(pl.cardId); const viaCard = card && card.type === 'CREDIT' && card.dueDay;
     planSummary(pl).rows.slice(Math.min(pl.paid || 0, 999)).forEach(r => { const d = viaCard ? dayStart(r.date) + daysUntilDayFrom(card.dueDay, r.date) * DAY : r.date; if (d >= t0 && d <= end) add(d, -conv(r.payment, card ? card.currency : base()), 'قسط ' + pl.name, 'fixed'); }); });
   db.accounts.filter(a => a.type === 'CREDIT' && !a.archived && a.dueDay).forEach(a => {
-    const owed = -(bal[a.id] || 0); if (owed > 0) add(t0 + daysUntilDay(a.dueDay) * DAY, -conv(owed, a.currency), 'سداد ' + lbl(a.name), 'fixed');
+    const owed = -(bal[a.id] || 0); const st = stmtLeft(a);
+    if (st) {
+      // المطلوب في الكشف يتدفع في ميعاده، والباقي (مشتريات بعد الكشف) في ميعاد الشهر اللي بعده
+      if (st.left > 0) add(st.date, -conv(st.left, a.currency), 'سداد كشف ' + lbl(a.name), 'fixed');
+      const rest = owed - st.left; if (rest > 0) add(dayStart(st.date) + daysUntilDayFrom(a.dueDay || new Date(st.date).getDate(), st.date) * DAY, -conv(rest, a.currency), 'سداد ' + lbl(a.name), 'fixed');
+    } else if (owed > 0) add(t0 + daysUntilDay(a.dueDay) * DAY, -conv(owed, a.currency), 'سداد ' + lbl(a.name), 'fixed');
   });
   db.debts.filter(d => !d.lent && d.dueDate && d.paid < d.amount && d.dueDate <= end).forEach(d => add(Math.max(d.dueDate, t0), -conv(d.amount - d.paid, d.currency), 'دين لـ ' + d.person, 'fixed'));
   db.debts.filter(d => d.lent && d.dueDate && d.paid < d.amount && d.dueDate >= t0 && d.dueDate <= end).forEach(d => add(d.dueDate, conv(d.amount - d.paid, d.currency), 'دين عند ' + d.person, 'in'));
@@ -2541,7 +2555,9 @@ function editAccount(a, fromCards) {
       <label class="f">الحد الائتماني</label><input class="in num" id="aLim" inputmode="decimal" value="${a.creditLimit || ''}">
       <label class="f">المبلغ المستحق عليها حالياً</label><input class="in num" id="aBal" inputmode="decimal" value="${-(a.initialBalance || 0) || 0}">
       <div class="grid2"><div><label class="f">يوم كشف الحساب</label><input class="in num" id="aSt" inputmode="numeric" value="${a.statementDay || ''}" placeholder="مثال 25"></div>
-      <div><label class="f">آخر يوم للسداد</label><input class="in num" id="aDue" inputmode="numeric" value="${a.dueDay || ''}" placeholder="مثال 15"></div></div>`
+      <div><label class="f">آخر يوم للسداد</label><input class="in num" id="aDue" inputmode="numeric" value="${a.dueDay || ''}" placeholder="مثال 15"></div></div>
+      <div class="grid2"><div><label class="f">المطلوب في الكشف (أقساط + استخدام)</label><input class="in num" id="aStmt" inputmode="decimal" value="${a.stmtDue || ''}" placeholder="من تطبيق البنك"></div>
+      <div><label class="f">آخر ميعاد لسداده</label><input class="in" type="date" id="aStmtD" value="${a.stmtDate ? fmtDate(a.stmtDate) : ''}"></div></div>`
       : `<label class="f">الرصيد الافتتاحي</label><input class="in num" id="aBal" inputmode="decimal" value="${a.initialBalance}">`}
     <label class="f">آخر 4 أرقام من البطاقة/الحساب (لربط رسائل البنك)</label><input class="in num" id="aL4" inputmode="numeric" maxlength="4" value="${esc(a.last4)}">
     ${isNew ? '' : `<label class="row" style="margin-top:12px"><input type="checkbox" id="aArc" ${a.archived ? 'checked' : ''}> أرشفة (إخفاء من الرئيسية)</label>`}
@@ -2553,7 +2569,12 @@ function editAccount(a, fromCards) {
       const amt = parseAmount($('#aBal').value) || 0;
       const rec = { ...a, id: a.id || newId(), name: name === lbl(a.name) ? a.name : name, type, currency: $('#aCur').value,
         initialBalance: type === 'CREDIT' ? -Math.abs(amt) : amt, last4: $('#aL4').value.trim(), archived: isNew ? false : $('#aArc').checked };
-      if (type === 'CREDIT') Object.assign(rec, { creditLimit: parseAmount($('#aLim').value) || 0, statementDay: day('#aSt'), dueDay: day('#aDue') });
+      if (type === 'CREDIT') {
+        Object.assign(rec, { creditLimit: parseAmount($('#aLim').value) || 0, statementDay: day('#aSt'), dueDay: day('#aDue') });
+        const sd = parseAmount($('#aStmt').value) || 0, sdt = new Date($('#aStmtD').value + 'T09:00').getTime();
+        if (sd !== (+a.stmtDue || 0) || sdt !== a.stmtDate) Object.assign(rec, { stmtDue: sd, stmtDate: isFinite(sdt) ? sdt : null, stmtSetAt: Date.now() });
+        if (rec.stmtDate && !rec.dueDay) rec.dueDay = new Date(rec.stmtDate).getDate();
+      }
       const i = db.accounts.findIndex(x => x.id === rec.id); if (i >= 0) db.accounts[i] = rec; else db.accounts.push(rec);
       save();
       if (fromCards) { closeSheet(); setTab('cards'); } else openAccounts();
