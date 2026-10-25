@@ -704,6 +704,12 @@ function renderMore() {
 }
 
 // ================= بطاقات الائتمان والتقسيط =================
+function daysUntilDayFrom(day, from) {
+  const now = new Date(dayStart(from));
+  let d = new Date(now.getFullYear(), now.getMonth(), Math.min(day, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()));
+  if (d <= now) d = new Date(now.getFullYear(), now.getMonth() + 1, Math.min(day, new Date(now.getFullYear(), now.getMonth() + 2, 0).getDate()));
+  return Math.round((d - now) / DAY);
+}
 function daysUntilDay(day) {
   const now = new Date(); now.setHours(0, 0, 0, 0);
   let d = new Date(now.getFullYear(), now.getMonth(), Math.min(day, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()));
@@ -717,6 +723,12 @@ function schedule(p) {
   const start = new Date(p.startDate);
   const dateOf = i => { const y = start.getFullYear(), m = start.getMonth() + i; return new Date(y, m, Math.min(start.getDate(), new Date(y, m + 1, 0).getDate())).getTime(); };
   let bal = P;
+  if (+p.monthlyFixed > 0) {
+    // المستخدم عارف القسط الشهري من البنك: نستخدمه زي ما هو
+    const pay = +p.monthlyFixed;
+    for (let i = 0; i < n; i++) { const principal = P / n; bal = Math.max(0, bal - principal); rows.push({ i: i + 1, date: dateOf(i), payment: pay + (i === 0 ? fees : 0), principal, interest: Math.max(0, pay - principal), balance: bal }); }
+    return rows;
+  }
   if (p.method === 'REDUCING') {
     const r = annual / 12;
     const pmt = r ? P * r / (1 - Math.pow(1 + r, -n)) : P / n;
@@ -742,19 +754,43 @@ function planSummary(p) {
     remaining: sum(rest, 'payment'), remainingPrincipal: sum(rest, 'principal'), remainingInterest: sum(rest, 'interest'), next: rest[0] || null };
 }
 const nextInstallment = p => planSummary(p).next;
+// بداية ونهاية التقسيط والشهور الباقية
+function planDates(p) {
+  const rows = schedule(p); const s = rows[0], e = rows[rows.length - 1];
+  const left = rows.length - Math.min(p.paid || 0, rows.length);
+  return { start: s ? s.date : p.startDate, end: e ? e.date : p.startDate, left, txt: `من ${ltr(fmtDate(s ? s.date : p.startDate))} لـ ${ltr(fmtDate(e ? e.date : p.startDate))}${left ? ` · باقي ${left} شهر` : ''}` };
+}
+// الأقساط التلقائية: كل ما ييجي ميعاد قسط يتسجّل على البطاقة (أو الحساب) ويتعلّم مدفوع
+function runInstallments() {
+  let n = 0; const now = Date.now();
+  db.installments.forEach(p => {
+    if (p.autoPay === false) return;
+    const rows = schedule(p); let g = 0;
+    while ((p.paid || 0) < rows.length && rows[p.paid || 0].date <= now && g++ < 120) {
+      const r = rows[p.paid || 0];
+      const accId = acc(p.cardId) ? p.cardId : (db.accounts.find(a => !a.archived && a.type !== 'CREDIT') || {}).id;
+      if (accId) db.txns.push({ id: newId(), type: 'EXPENSE', amount: Math.round(r.payment * 100) / 100, accountId: accId, categoryId: (catByName('cat_installments') || {}).id || null,
+        merchant: p.name, note: `قسط ${r.i}/${rows.length}`, date: r.date, source: 'INSTALLMENT', planId: p.id });
+      p.paid = (p.paid || 0) + 1; n++;
+    }
+  });
+  if (n) { save(); toast(`اتسجّل ${n} قسط تلقائي`); }
+}
 
 function renderCards() {
   const bal = balances();
   const cards = db.accounts.filter(a => a.type === 'CREDIT' && !a.archived);
   view().innerHTML = `
     ${cards.length ? cards.map(a => {
-      const owed = Math.max(0, -(bal[a.id] || 0)); const lim = +a.creditLimit || 0; const p = lim ? owed / lim * 100 : 0;
+      const owed = Math.max(0, -(bal[a.id] || 0)); const lim = +a.creditLimit || 0;
       const plans = db.installments.filter(x => x.cardId === a.id);
+      // البنك بيحجز باقي مبلغ التقسيط من الحد المتاح
       const blocked = plans.reduce((s, x) => s + planSummary(x).remainingPrincipal, 0);
+      const p = lim ? (owed + blocked) / lim * 100 : 0;
       return `<div class="card ccard">
         <div class="row between"><b>${esc(lbl(a.name))}</b><span class="muted">${a.last4 ? '•••• ' + esc(a.last4) : ''}</span></div>
         <div class="row between" style="margin-top:14px"><div><div class="muted">المستخدم</div><div class="big2 num">${money(owed)}</div></div>
-          ${lim ? `<div style="text-align:left"><div class="muted">المتاح</div><div class="big2 num">${money(Math.max(0, lim - owed))}</div></div>` : ''}</div>
+          ${lim ? `<div style="text-align:left"><div class="muted">المتاح</div><div class="big2 num">${money(Math.max(0, lim - owed - blocked))}</div></div>` : ''}</div>
         ${lim ? `<div class="bar light ${p >= 80 ? 'over' : p >= 50 ? 'warn' : ''}"><i style="width:${Math.min(100, p)}%"></i></div><div class="muted" style="margin-top:4px">${p.toFixed(0)}% من الحد ${money(lim)} ${a.currency}${p >= 30 ? ' · يُفضّل إبقاء الاستخدام أقل من 30%' : ''}</div>` : ''}
         <div class="muted" style="margin-top:6px">${a.statementDay ? `كشف الحساب يوم ${a.statementDay}` : ''}${a.dueDay ? ` · آخر موعد سداد يوم ${a.dueDay} (بعد ${daysUntilDay(a.dueDay)} يوم)` : ''}${blocked ? ` · أقساط متبقية ${money(blocked)}` : ''}</div>
         <div class="btns"><button class="btn small" data-pay="${a.id}">سداد البطاقة</button><button class="btn small" data-plan="${a.id}">تقسيط جديد</button><button class="btn small" data-edit="${a.id}">تعديل</button></div>
@@ -762,11 +798,14 @@ function renderCards() {
     }).join('') : `<div class="card empty">لا توجد بطاقات ائتمان بعد.<br>أضف بطاقة لمتابعة الحد المستخدم ومواعيد السداد والتقسيط.</div>`}
     <button class="btn primary block" id="ccNew">＋ إضافة بطاقة ائتمان</button>
     <h3 style="margin-top:18px">خطط التقسيط</h3>
+    ${db.installments.some(p => nextInstallment(p)) ? (() => { const act = db.installments.filter(p => nextInstallment(p)); const mon = act.reduce((s, p) => s + nextInstallment(p).payment, 0); const last = act.map(p => planDates(p).end).sort((a, b) => b - a)[0];
+      return `<div class="card"><div class="grid3"><div><span class="muted">أقساط شهرية</span><b class="num exp">${money(mon)}</b></div><div><span class="muted">${prof().salary ? 'من المرتب' : 'عدد الخطط'}</span><b class="num">${prof().salary ? Math.round(mon / prof().salary * 100) + '%' : act.length}</b></div><div><span class="muted">آخر قسط</span><b class="num">${fmtDate(last).slice(0, 7)}</b></div></div></div>`; })() : ''}
     ${db.installments.length ? db.installments.map(p => {
       const s = planSummary(p); const a = acc(p.cardId);
       return `<div class="card plan" data-p="${p.id}">
         <div class="row between"><b>${esc(p.name)}</b><span class="pill">${s.paid}/${s.rows.length}</span></div>
-        <div class="muted">${a ? esc(lbl(a.name)) + ' · ' : ''}${p.method === 'REDUCING' ? 'فائدة متناقصة' : 'فائدة ثابتة'} ${p.rate}% سنوياً</div>
+        <div class="muted">${a ? esc(lbl(a.name)) + ' · ' : ''}${+p.monthlyFixed ? 'قسط ثابت' : `${p.method === 'REDUCING' ? 'فائدة متناقصة' : 'فائدة ثابتة'} ${p.rate}% سنوياً`}${p.autoPay !== false ? ' · تلقائي' : ''}</div>
+        <div class="muted">📅 ${planDates(p).txt}</div>
         <div class="grid3" style="margin-top:10px">
           <div><span class="muted">القسط الشهري</span><b class="num">${money(s.monthly)}</b></div>
           <div><span class="muted">المتبقي</span><b class="num">${money(s.remaining)}</b></div>
@@ -790,7 +829,7 @@ function renderCards() {
 
 function editPlan(p, cardId) {
   const isNew = !p;
-  p = p || { name: '', cardId: cardId || (db.accounts.find(a => a.type === 'CREDIT') || {}).id || null, principal: '', rate: '', months: 12, method: 'FLAT', fees: 0, startDate: Date.now(), paid: 0 };
+  p = p || { name: '', cardId: cardId || (db.accounts.find(a => a.type === 'CREDIT') || {}).id || null, principal: '', rate: '', months: 12, method: 'FLAT', fees: 0, startDate: Date.now(), paid: 0, monthlyFixed: '', autoPay: true };
   sheet(isNew ? 'خطة تقسيط جديدة' : 'تعديل خطة التقسيط', `
     <label class="f">اسم المشتريات</label><input class="in" id="pN" value="${esc(p.name)}" placeholder="مثال: موبايل، تكييف">
     <label class="f">البطاقة / الحساب</label><select class="in" id="pC"><option value="">بدون</option>${accOptions(p.cardId)}</select>
@@ -800,27 +839,31 @@ function editPlan(p, cardId) {
       <div><label class="f">سعر الفائدة السنوي %</label><input class="in num" id="pR" inputmode="decimal" value="${p.rate}" placeholder="0 = بدون فوائد"></div>
       <div><label class="f">مصاريف إدارية</label><input class="in num" id="pF" inputmode="decimal" value="${p.fees || 0}"></div>
     </div>
+    <label class="f">القسط الشهري (لو عارفه من البنك، سيبه فاضي ونحسبه)</label><input class="in num" id="pMF" inputmode="decimal" value="${p.monthlyFixed || ''}" placeholder="اختياري">
     <label class="f">طريقة حساب الفائدة</label>
     <div class="seg"><button data-m="FLAT" class="${p.method !== 'REDUCING' ? 'on' : ''}">ثابتة (Flat)</button><button data-m="REDUCING" class="${p.method === 'REDUCING' ? 'on' : ''}">متناقصة</button></div>
     <p class="muted" style="margin:6px 0 0">الثابتة: الفائدة تُحسب على أصل المبلغ كله طول المدة (أغلب البنوك في مصر). المتناقصة: تُحسب على المتبقي فقط.</p>
     <label class="f">تاريخ أول قسط</label><input class="in" type="date" id="pD" value="${fmtDate(p.startDate)}">
-    ${isNew ? '' : `<label class="f">عدد الأقساط المدفوعة</label><input class="in num" id="pPaid" inputmode="numeric" value="${p.paid || 0}">`}
+    <label class="row" style="margin-top:12px"><input type="checkbox" id="pAuto" ${p.autoPay !== false ? 'checked' : ''}> سجّل القسط تلقائياً كل شهر على البطاقة</label>
+    ${isNew ? '<p class="muted">لو التقسيط بادئ من قبل كده، الأقساط اللي فاتت هتتعلّم مدفوعة من غير ما تتسجّل تاني.</p>' : `<label class="f">عدد الأقساط المدفوعة</label><input class="in num" id="pPaid" inputmode="numeric" value="${p.paid || 0}">`}
     <div class="insight" id="pPrev" style="margin-top:12px"></div>
     <div class="btns"><button class="btn primary" id="pSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="pDel">حذف</button>'}</div>`, body => {
     let method = p.method || 'FLAT';
     const read = () => ({ ...p, name: $('#pN').value.trim(), cardId: +$('#pC').value || null, principal: parseAmount($('#pP').value) || 0, months: parseInt(normDigits($('#pM').value)) || 1,
       rate: parseAmount($('#pR').value) || 0, fees: parseAmount($('#pF').value) || 0, method, startDate: new Date($('#pD').value + 'T09:00').getTime() || Date.now(),
-      paid: isNew ? 0 : Math.max(0, parseInt(normDigits($('#pPaid').value)) || 0) });
+      paid: isNew ? 0 : Math.max(0, parseInt(normDigits($('#pPaid').value)) || 0), monthlyFixed: parseAmount($('#pMF').value) || 0, autoPay: $('#pAuto').checked });
     const prev = () => { const x = read(); if (!x.principal) { $('#pPrev').innerHTML = 'أدخل أصل المبلغ لعرض القسط'; return; } const s = planSummary(x);
-      $('#pPrev').innerHTML = `القسط الشهري: <b class="num">${money(s.monthly)}</b><br>إجمالي الفوائد: <b class="num">${money(s.totalInterest)}</b> · الإجمالي: <b class="num">${money(s.total)}</b>`; };
+      const d = planDates(x);
+      $('#pPrev').innerHTML = `القسط الشهري: <b class="num">${money(s.monthly)}</b><br>إجمالي الفوائد: <b class="num">${money(s.totalInterest)}</b> · الإجمالي: <b class="num">${money(s.total)}</b><br>📅 يبدأ ${ltr(fmtDate(d.start))} وينتهي ${ltr(fmtDate(d.end))}${hourRate() ? `<br>⏱️ القسط = ${workTime(s.monthly)} كل شهر` : ''}`; };
     body.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { method = b.dataset.m; body.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('on', x === b)); prev(); });
     body.querySelectorAll('input,select').forEach(i => i.addEventListener('input', prev));
     prev();
     $('#pSave').onclick = () => {
       const x = read(); if (!x.name || !(x.principal > 0)) return toast('أدخل الاسم وأصل المبلغ');
       x.id = x.id || newId();
+      if (isNew) x.paid = schedule(x).filter(r => r.date < dayStart(Date.now())).length;
       const i = db.installments.findIndex(y => y.id === x.id); if (i >= 0) db.installments[i] = x; else db.installments.push(x);
-      save(); closeSheet(); setTab('cards');
+      save(); runInstallments(); closeSheet(); setTab('cards');
     };
     if (!isNew) $('#pDel').onclick = () => { if (confirm('حذف خطة التقسيط؟')) { db.installments = db.installments.filter(y => y.id !== p.id); save(); closeSheet(); } };
   });
@@ -829,6 +872,7 @@ function editPlan(p, cardId) {
 function openPlan(p) {
   const s = planSummary(p);
   sheet(p.name, `
+    <div class="insight">📅 ${planDates(p).txt}${p.autoPay !== false ? ' · بيتسجّل تلقائي' : ''}</div>
     <div class="grid2">
       <div class="stat"><span class="muted">أصل المبلغ</span><b class="num">${money(p.principal)}</b></div>
       <div class="stat"><span class="muted">إجمالي الفوائد</span><b class="num exp">${money(s.totalInterest)}</b></div>
@@ -1198,7 +1242,7 @@ function markFixedPaid(r, date) {
   let g = 0; const end = new Date(date).setHours(23, 59, 59, 999);
   while ((r.nextDate <= end || r.nextDate - date < tol * DAY) && g++ < 400) r.nextDate = advance(r);
 }
-const isFixedTxn = t => !!t.fixedId || t.source === 'RECURRING';
+const isFixedTxn = t => !!t.fixedId || t.source === 'RECURRING' || t.source === 'INSTALLMENT';
 
 // توقع الرصيد يوم بيوم لحد بعد القبض الجاي بشهر
 function cashPlan() {
@@ -1224,7 +1268,9 @@ function cashPlan() {
       if (p.saveOnPayday !== false) add(d + 1, -(p.salary * (db.prefs.savingRate || 20) / 100), 'تحويل الادخار', 'save');
     }
   }
-  db.installments.forEach(pl => planSummary(pl).rows.slice(Math.min(pl.paid || 0, 999)).forEach(r => { if (r.date >= t0 && r.date <= end) add(r.date, -r.payment, 'قسط ' + pl.name, 'fixed'); }));
+  // أقساط البطاقة بتتدفع مع سداد البطاقة في يوم السداد اللي بعد القسط، وغيرها بتتدفع في ميعادها
+  db.installments.forEach(pl => { const card = acc(pl.cardId); const viaCard = card && card.type === 'CREDIT' && card.dueDay;
+    planSummary(pl).rows.slice(Math.min(pl.paid || 0, 999)).forEach(r => { const d = viaCard ? dayStart(r.date) + daysUntilDayFrom(card.dueDay, r.date) * DAY : r.date; if (d >= t0 && d <= end) add(d, -conv(r.payment, card ? card.currency : base()), 'قسط ' + pl.name, 'fixed'); }); });
   db.accounts.filter(a => a.type === 'CREDIT' && !a.archived && a.dueDay).forEach(a => {
     const owed = -(bal[a.id] || 0); if (owed > 0) add(t0 + daysUntilDay(a.dueDay) * DAY, -conv(owed, a.currency), 'سداد ' + lbl(a.name), 'fixed');
   });
@@ -1293,6 +1339,10 @@ function riskAlerts(cp = cashPlan()) {
   else if (p.salary > 0 && cp.atPay < cp.cushion) out.push({ lvl: 'warn', sc: 'شهري', text: `متوقع توصل يوم القبض ومعاك <b class="num">${n(cp.atPay)}</b> بس، أقل من حد الأمان.` });
   const fm = fixedMonthly();
   if (p.salary > 0 && fm > p.salary * 0.5) out.push({ lvl: 'warn', sc: 'شهري', text: `مصاريفك الثابتة <b class="num">${n(fm)}</b> = ${Math.round(fm / p.salary * 100)}% من مرتبك. الأفضل تبقى أقل من 50%.` });
+  const act = db.installments.filter(x => nextInstallment(x));
+  const instM = act.reduce((s0, x) => s0 + nextInstallment(x).payment, 0);
+  if (p.salary > 0 && instM > p.salary * 0.3) out.push({ lvl: 'warn', sc: 'شهري', text: `الأقساط <b class="num">${n(instM)}</b> في الشهر = ${Math.round(instM / p.salary * 100)}% من مرتبك. ماتدخلش في تقسيط جديد قبل ما حاجة تخلص.` });
+  act.filter(x => planDates(x).left <= 2).forEach(x => out.push({ lvl: 'info', sc: 'شهري', text: `تقسيط «${esc(x.name)}» بيخلص ${ltr(fmtDate(planDates(x).end))}، وهيوفّرلك <b class="num">${n(nextInstallment(x).payment)}</b> كل شهر. وجّههم للادخار.` }));
   const ai = avgMonthly('INCOME'), ae = avgMonthly('EXPENSE');
   if (ai > 0 && ae > ai) out.push({ lvl: 'danger', sc: 'شهري', text: `آخر 3 شهور بتصرف أكتر من دخلك بمتوسط <b class="num">${n(ae - ai)}</b> في الشهر.` });
   if (!out.some(x => x.lvl !== 'info')) out.unshift({ lvl: 'ok', sc: 'الحالة', text: `وضعك آمن. تقدر تصرف <b class="num">${n(cp.safeDaily)}</b> في اليوم لحد القبض (${L} يوم)${cp.liquid > 0 && isFinite(cp.runway) ? `، وفلوسك تكفي ${cp.runway} يوم من غير دخل` : ''}.` });
@@ -1696,7 +1746,7 @@ const HELP = [
   { k: ['ساعات', 'ساعه', 'قيمه وقتي', 'قيمه الساعه'], t: 'قيمة ساعة الشغل', a: 'من مرتبك وعدد ساعات شغلك بنحسب ساعتك بكام. وانت بتسجّل أي مصروف هتلاقي تحت المبلغ هو يساوي كام ساعة شغل، وتقدر تسألني: 500 جنيه تساوي كام ساعة.' },
   { k: ['تقرير', 'قائمه الدخل', 'تقارير'], t: 'التقرير الشهري', a: 'التقرير الشهري زي قائمة الدخل: الإيرادات، ناقص المصروفات الثابتة، ناقص المتغيرة، والصافي فائض أو عجز، مع ملاحظات. تفتحه من التقارير أو من المزيد، وتقدر تصدّره Excel.', go: () => openMonthReport(0) },
   { k: ['ادخار', 'طوارئ', 'استثمار', 'احوش'], t: 'الادخار والاستثمار', a: 'صفحة الادخار فيها قاعدة 50 30 20 وصندوق الطوارئ وخطة الأهداف. ابدأ بصندوق طوارئ يغطي من 3 لـ 6 شهور، وبعدين الاستثمار، وفي المتحكم المالي هتلاقي أفكار زي الشهادات وصناديق النقد والذهب.', go: () => { closeSheet(); setTab('savings'); } },
-  { k: ['بطاقه', 'كريدت', 'قسط', 'اقساط', 'تقسيط'], t: 'البطاقات والأقساط', a: 'من المزيد ثم بطاقات الائتمان والتقسيط، ضيف البطاقة بحدها ويوم السداد، وضيف أي تقسيط بالمبلغ والفايدة والمدة، والتطبيق يعمل جدول الأقساط وينبهك قبل الميعاد.', go: () => { closeSheet(); setTab('cards'); } },
+  { k: ['بطاقه', 'كريدت', 'قسط', 'اقساط', 'تقسيط'], t: 'البطاقات والأقساط', a: 'من المزيد ثم بطاقات الائتمان والتقسيط، ضيف البطاقة بحدها ويوم السداد، وضيف أي تقسيط بالمبلغ والفايدة والمدة، والتطبيق يعمل جدول الأقساط ويقولك بدأ امتى وهيخلص امتى، ويسجّل القسط على البطاقة تلقائي كل شهر، ويدخله في التوقعات والتنبيهات.', go: () => { closeSheet(); setTab('cards'); } },
   { k: ['رسائل', 'رساله البنك', 'sms'], t: 'رسائل البنك', a: 'انسخ رسالة البنك والصقها في رسائل البنك، والتطبيق يطلع المبلغ والتاجر والتصنيف لوحده. وفيه طريقة ربط تلقائي بالاختصارات على الآيفون.', go: () => { closeSheet(); setTab('inbox'); } },
   { k: ['بياناتي', 'اعدل المرتب', 'يوم القبض', 'حد الامان', 'اغير المرتب'], t: 'بياناتي المالية', a: 'تقدر تعدّل المرتب ويوم القبض وساعات الشغل ونسبة الادخار وحد الأمان من الإعدادات، أو من المزيد ثم بياناتي المالية.', go: () => openOnboarding(true) },
   { k: ['ميزانيه', 'تصنيف', 'تصنيفات'], t: 'التصنيفات والميزانيات', a: 'من المزيد ثم التصنيفات والميزانيات، حط ميزانية شهرية لكل تصنيف، والتطبيق ينبهك لما توصل 80 في المية.', go: () => openCategories() },
@@ -2059,7 +2109,8 @@ function handleVoice(text) {
     if (/(قسط|اقساط)/.test(t)) {
       const ns = db.installments.map(x => [x, nextInstallment(x)]).filter(x => x[1]).sort((a, b) => a[1].date - b[1].date);
       if (!ns.length) return { reply: 'مفيش أقساط جاية' };
-      return { reply: `أقرب قسط ${ns[0][0].name} بـ ${n(ns[0][1].payment)} يوم ${fmtDate(ns[0][1].date)}` };
+      const tot = ns.reduce((s0, x) => s0 + x[1].payment, 0); const last = ns.map(x => planDates(x[0])).sort((a, b) => b.end - a.end)[0];
+      return { reply: `عندك ${ns.length} تقسيط بإجمالي ${n(tot)} في الشهر. أقرب قسط ${ns[0][0].name} بـ ${n(ns[0][1].payment)} يوم ${fmtDate(ns[0][1].date)}، وآخر قسط هيخلص ${fmtDate(last.end)}` };
     }
     if (/(مساعده|تقدر تعمل ايه|بتعمل ايه|اوامر)/.test(t)) return { reply: 'قول مثلاً: إزاي أضيف مصروف ثابت، جولة، صرفت 200 أكل، قبضت 5000، فاضلي كام، حالتي المالية، 500 جنيه تساوي كام ساعة، مصاريفي الثابتة، أكبر مصروف، قارن بالشهر اللي فات، توقع آخر الشهر، الميزانية، وفرت كام، أو اقتراح' };
   }
@@ -2359,6 +2410,7 @@ function openRecurring() {
     ${Object.keys(PERIODS).map(k => { const l = exp.filter(r => r.period === k); if (!l.length) return '';
       const tot = l.filter(r => r.active).reduce((s, r) => s + conv(r.amount, recCur(r)), 0);
       return `<div class="section-title row between"><span>${PERIODS[k]}</span><span class="num">${money(tot)}${k !== 'MONTHLY' ? ` ≈ ${money(tot * MONTH_FACTOR[k])} شهرياً` : ''}</span></div><div class="list">${l.map(row).join('')}</div>`; }).join('') || '<div class="empty">مفيش مصاريف ثابتة لسه</div>'}
+    ${db.installments.some(p => nextInstallment(p)) ? `<div class="section-title">أقساط</div><div class="list">${db.installments.filter(p => nextInstallment(p)).map(p => `<div class="item" data-inst="${p.id}"><div class="ico">💳</div><div class="grow"><div class="ellipsis">${esc(p.name)}</div><div class="muted">${planDates(p).txt}</div></div><div class="num exp">${money(nextInstallment(p).payment)}</div></div>`).join('')}</div>` : ''}
     <button class="btn primary block" id="rNew" style="margin-top:10px">＋ مصروف ثابت</button>
     ${hints.length ? `<h3 style="margin-top:16px">بتتكرر كتير، تخليها ثابتة؟</h3>${hints.map(h => `<div class="insight"><div class="grow">${esc(h.merchant)} · <span class="num">${money(h.amount)}</span> · ${PERIODS[h.period]} <span class="muted">(${h.n} مرات)</span></div><button class="btn small" data-sub='${esc(JSON.stringify(h))}'>خليه ثابت</button></div>`).join('')}` : ''}
     <div class="section-title">الدخل المتكرر</div>
@@ -2372,6 +2424,7 @@ function openRecurring() {
     });
     document.querySelectorAll('[data-sub]').forEach(el => el.onclick = () => { const h = JSON.parse(el.dataset.sub); editRecurring(null, h); });
     $('#rNew').onclick = () => editRecurring(null, null, 'EXPENSE');
+    document.querySelectorAll('[data-inst]').forEach(el => el.onclick = () => openPlan(db.installments.find(p => p.id === +el.dataset.inst)));
     $('#rNewI').onclick = () => editRecurring(null, null, 'INCOME');
   });
 }
@@ -2736,7 +2789,7 @@ $('#iosHintClose').onclick =() => { $('#iosHint').classList.add('hidden'); try {
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) hiddenAt = Date.now();
-  else { if (hiddenAt && Date.now() - hiddenAt > 60000) showLock(); runRecurring(); if ($('#sheet').classList.contains('hidden')) render(); }
+  else { if (hiddenAt && Date.now() - hiddenAt > 60000) showLock(); runRecurring(); runInstallments(); if ($('#sheet').classList.contains('hidden')) render(); }
 });
 
 const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
@@ -2758,6 +2811,7 @@ setInterval(checkReminder, 60000);
 
 showLock();
 runRecurring();
+runInstallments();
 render();
 handleHash();
 setTimeout(checkReminder, 3000);
