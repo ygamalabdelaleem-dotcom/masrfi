@@ -1025,6 +1025,8 @@ function openSettings() {
     <h3 style="margin-top:16px">رسائل البنك</h3>
     <label class="row"><input type="checkbox" id="stAuto" ${db.prefs.autoAddSms ? 'checked' : ''}> إضافة حركات الرسائل تلقائياً</label>
     <button class="btn block" id="stSmsHow" style="margin-top:8px">⚡ طريقة الربط التلقائي بالاختصارات</button>
+    <h3 style="margin-top:16px">المساعد الذكي</h3>
+    <button class="btn block" id="stGemini">${ic('sparkle')} ربط Gemini ${db.prefs.geminiKey ? '(مربوط)' : '(اختياري)'}</button>
     <h3 style="margin-top:16px">ساعة أبل</h3>
     <p class="muted">تطبيقات الويب مش بتتثبت على الساعة، لكن تذكير التقويم اليومي بيظهر عليها. تطبيق ساعة كامل محتاج يتعمل كتطبيق iOS أصلي على جهاز Mac.</p>
     <h3 style="margin-top:16px">أخرى</h3>
@@ -1049,6 +1051,7 @@ function openSettings() {
     };
     $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
     $('#stSmsHow').onclick = openSmsAutomation;
+    $('#stGemini').onclick = openGemini;
     $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
   });
 }
@@ -1174,10 +1177,73 @@ function parseVoice(raw) {
   if (!categoryId) categoryId = suggestCategory(merchant || t, income ? 'CREDIT' : 'DEBIT');
   return { amount, type: income ? 'INCOME' : 'EXPENSE', categoryId, merchant: merchant.slice(0, 40), accountId: a && a.id };
 }
+// ================= Gemini (اختياري) =================
+// بيتبعت لـ Google ملخص أرقام بس (إجماليات وتصنيفات)، مش تفاصيل الحركات ولا أسماء الحسابات.
+function financeSummary() {
+  const [f, t] = monthRange(0); const month = inRange(f, t);
+  const [inc, exp] = typeTotals(month); const p = dailyPlan();
+  const cats = catTotals(month, 'EXPENSE');
+  const top = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id, v]) => { const c = cat(+id); return `${c ? lbl(c.name) : 'بدون تصنيف'}: ${Math.round(v)}${c && c.monthlyBudget ? ` (ميزانية ${c.monthlyBudget})` : ''}`; });
+  const [lf, lt] = monthRange(-1); const [li, le] = typeTotals(inRange(lf, lt));
+  const b = balances(); const total = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(b[a.id] || 0, a.currency), 0);
+  const owed = db.accounts.filter(a => a.type === 'CREDIT').reduce((s, a) => s + Math.max(0, -conv(b[a.id] || 0, a.currency)), 0);
+  const plans = db.installments.map(x => { const s = planSummary(x); return `${x.name}: قسط ${Math.round(s.monthly)}، متبقي ${Math.round(s.remaining)}`; });
+  const goals = db.goals.map(g => `${g.name}: ${Math.round(g.saved)} من ${Math.round(g.target)}`);
+  return [`العملة: ${base()}. النهارده ${fmtDate(Date.now())}، باقي ${p.daysLeft} يوم في الشهر.`,
+    `الشهر ده: دخل ${Math.round(inc)}${!inc && p.incBase ? ` (متوسط الدخل ${Math.round(p.incBase)})` : ''}، مصروف ${Math.round(exp)}. الشهر اللي فات: دخل ${Math.round(li)}، مصروف ${Math.round(le)}.`,
+    `إجمالي الأرصدة ${Math.round(total)}، مديونية بطاقات ائتمان ${Math.round(owed)}.`,
+    `هدف الادخار ${db.prefs.savingRate || 20}% من الدخل. المتاح للصرف لباقي الشهر ${Math.round(p.remaining)}، يعني ${Math.round(p.daily)} في اليوم، وصرف النهارده ${Math.round(p.todaySpent)}. مدفوعات جاية ${Math.round(p.upcoming)}.`,
+    `المصروفات حسب التصنيف: ${top.join('، ') || 'لا يوجد'}.`,
+    plans.length ? `أقساط: ${plans.join('، ')}.` : '', goals.length ? `أهداف: ${goals.join('، ')}.` : ''].filter(Boolean).join('\n');
+}
+async function askGemini(question) {
+  const body = {
+    systemInstruction: { parts: [{ text: 'أنت مساعد مالي شخصي داخل تطبيق «محفظتي». رد بالعامية المصرية باختصار شديد (من جملة لـ 3 جمل) لأن الرد هيتقرا بالصوت. بدون تنسيق أو رموز أو نجوم. استخدم الأرقام اللي في ملخص المستخدم بس، وماتخترعش أرقام. لو السؤال مش عن الفلوس رد باختصار ورجّع الكلام للمصاريف.' }] },
+    contents: [{ role: 'user', parts: [{ text: `ملخص حساباتي:\n${financeSummary()}\n\nسؤالي: ${question}` }] }],
+    generationConfig: { temperature: .4, maxOutputTokens: 300 }
+  };
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${db.prefs.geminiModel || 'gemini-flash-latest'}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': db.prefs.geminiKey }, body: JSON.stringify(body), signal: ctl.signal });
+    const j = await res.json();
+    if (!res.ok) throw new Error((j.error && j.error.message) || res.status);
+    const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(x => x.text).join(' ').trim();
+    if (!txt) throw new Error('رد فاضي');
+    return txt.replace(/[*#_`]/g, '');
+  } finally { clearTimeout(tm); }
+}
+function openGemini() {
+  sheet('ربط Gemini', `
+    <p class="muted">اختياري ومجاني في الحدود العادية. لما تربطه، الأسئلة والنصايح بتتجاوب من Gemini، وتسجيل المصاريف بالصوت بيفضل شغّال على الموبايل من غيره.</p>
+    <h3>تجيب المفتاح إزاي:</h3>
+    <ol class="steps">
+      <li>افتح <b>aistudio.google.com</b> وادخل بحساب جوجل.</li>
+      <li>اضغط <b>Get API key</b> ثم <b>Create API key</b>.</li>
+      <li>انسخ المفتاح والصقه هنا.</li>
+    </ol>
+    <label class="f">مفتاح Gemini API</label><input class="in num" id="gKey" type="password" autocomplete="off" value="${esc(db.prefs.geminiKey || '')}" placeholder="AIza...">
+    <div class="btns"><button class="btn primary" id="gSaveK">حفظ وتجربة</button>${db.prefs.geminiKey ? '<button class="btn danger" id="gDel">إلغاء الربط</button>' : ''}</div>
+    <div id="gOut" style="margin-top:10px"></div>
+    <p class="muted">المفتاح بيتحفظ على الموبايل ده بس، ومش بيدخل في النسخة الاحتياطية. اللي بيتبعت لـ Google هو ملخص أرقام (إجماليات وتصنيفات) مع سؤالك، مش تفاصيل حركاتك ولا أرقام حساباتك.</p>`, () => {
+    $('#gSaveK').onclick = async () => {
+      const k = $('#gKey').value.trim(); if (!k) return toast('الصق المفتاح الأول');
+      db.prefs.geminiKey = k; save();
+      $('#gOut').innerHTML = insH('sparkle', 'بجرّب...');
+      try { const a = await askGemini('قولي جملة واحدة عن وضع مصاريفي الشهر ده'); $('#gOut').innerHTML = insH('sparkle', '✅ اتربط. ' + esc(a)); }
+      catch (e) { $('#gOut').innerHTML = insH('alert', 'المفتاح مش شغّال: ' + esc(e.message), 1); }
+    };
+    if ($('#gDel')) $('#gDel').onclick = () => { db.prefs.geminiKey = ''; save(); openGemini(); toast('اتلغى الربط'); };
+  });
+}
+
 // ينفّذ الأمر الصوتي ويرجّع الرد اللي هيتقال. الإضافة بتتسجّل مباشرة مع إمكانية التراجع.
-function handleVoice(text) {
+async function handleVoice(text) {
   const t = normDigits(text).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
   const p = dailyPlan();
+  const r = parseVoice(text);
+  // الأسئلة والنصايح تروح لـ Gemini لو المفتاح متسجّل، والتسجيل بالمبلغ يفضل محلي
+  if (db.prefs.geminiKey && (r.question || !(r.amount > 0))) { try { return { reply: await askGemini(text), ai: true }; } catch (e) { toast('Gemini مش متاح دلوقتي: ' + e.message); } }
   if (/(فاضل|باقي|متبقي|اقدر اصرف|ممكن اصرف|مسموح)/.test(t)) {
     if (!p.incBase) return { reply: 'سجّل دخلك الأول عشان أعرف أحسبلك' };
     return { reply: `فاضلك ${Math.round(Math.max(0, p.remaining))} جنيه للشهر، يعني تقدر تصرف حوالي ${Math.round(p.daily)} في اليوم. صرفت النهارده ${Math.round(p.todaySpent)}.` };
@@ -1187,7 +1253,6 @@ function handleVoice(text) {
     const b = balances(); const tot = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(b[a.id] || 0, a.currency), 0);
     return { reply: `إجمالي رصيدك ${Math.round(tot)} ${base() === 'EGP' ? 'جنيه' : base()}` };
   }
-  const r = parseVoice(text);
   if (r.question) { const d = document.createElement('div'); askNl(text, d); return { reply: d.textContent.replace('عرض', '').trim() || 'ماعرفتش أجاوب على ده' }; }
   if (!(r.amount > 0)) return { reply: 'ماعرفتش المبلغ، قول مثلاً: صرفت 200 أكل' };
   const accountId = r.accountId || (db.accounts.find(a => !a.archived && a.type !== 'CREDIT') || db.accounts[0] || {}).id;
@@ -1220,10 +1285,11 @@ function quickVoice() {
   $('#vfab').classList.add('on'); voiceBubble('بسمعك...', 'قول: صرفت 150 أكل، أو فاضلي كام؟');
   vRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); voiceBubble('بسمعك...', heard); };
   vRec.onerror = e => { voiceBubble(e.error === 'not-allowed' ? 'المايك مش مسموح' : 'ماسمعتش كويس', e.error === 'not-allowed' ? 'اسمح بالمايك من إعدادات الآيفون، أو اكتب الأمر' : 'اضغط على المايك وجرّب تاني'); };
-  vRec.onend = () => {
+  vRec.onend = async () => {
     vRec = null; $('#vfab').classList.remove('on');
     if (!heard.trim()) return;
-    const r = handleVoice(heard);
+    voiceBubble('«' + heard + '»', db.prefs.geminiKey ? 'بفكّر...' : '');
+    const r = await handleVoice(heard);
     voiceBubble('«' + heard + '»', r.reply, r.undoId); speak(r.reply);
   };
   try { vRec.start(); } catch (e) { vRec = null; $('#vfab').classList.remove('on'); openVoice(); }
@@ -1238,9 +1304,10 @@ function openVoice() {
     <div class="btns"><button class="btn primary" id="vGo">تنفيذ</button><button class="btn" id="vTips">${ic('speaker')} اسمع اقتراح النهارده</button></div>
     <div id="vOut" style="margin-top:10px"></div>`, () => {
     const out = $('#vOut');
-    const run = () => {
+    const run = async () => {
       const text = $('#vText').value.trim(); if (!text) return toast('قول أو اكتب حاجة الأول');
-      const r = handleVoice(text);
+      out.innerHTML = insH('sparkle', 'بفكّر...');
+      const r = await handleVoice(text);
       out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '');
       speak(r.reply);
       if (r.undoId) $('#vUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== r.undoId); save(); out.innerHTML = insH('alert', 'اتلغت'); };
@@ -1655,7 +1722,7 @@ function openBackup() {
     <label class="f" style="margin-top:16px">استيراد حركات من CSV (التاريخ، النوع، المبلغ، الحساب، التصنيف، التاجر، ملاحظة)</label><input class="in" id="bCsv" type="file" accept=".csv,text/csv">
     <button class="btn danger block" id="bWipe" style="margin-top:16px">مسح كل البيانات</button>`, () => {
     $('#bSave').onclick = async () => {
-      const pass = $('#bPass').value; let payload = JSON.stringify(db), name = `mywallet-backup-${fmtDate(Date.now())}.json`;
+      const pass = $('#bPass').value; let payload = JSON.stringify({ ...db, prefs: { ...db.prefs, geminiKey: '' } }), name = `mywallet-backup-${fmtDate(Date.now())}.json`;
       if (pass) {
         const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
         const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await deriveKey(pass, salt), enc.encode(payload));
@@ -1674,6 +1741,7 @@ function openBackup() {
         }
         if (!o.accounts || !o.txns) throw new Error('bad');
         if (!confirm('سيتم استبدال كل البيانات الحالية بالنسخة. متابعة؟')) return;
+        o.prefs = { ...o.prefs, geminiKey: db.prefs.geminiKey || '' };
         db = migrate(o); save(); closeSheet(); toast('تمت الاستعادة');
       } catch (err) { toast('تعذّرت الاستعادة: الملف أو كلمة المرور غير صحيحة'); }
     };
