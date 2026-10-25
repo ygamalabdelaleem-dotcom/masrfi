@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '34';
+const APP_VERSION = '35';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2325,13 +2325,22 @@ async function gmSpeak(text, onEnd, voice) {
   const a = azPlayer(); a.pause(); a.src = url; a.playbackRate = db.prefs.voiceRate > 1 ? 1.1 : db.prefs.voiceRate < 0.9 ? 0.9 : 1; a.onended = () => onEnd && onEnd();
   await a.play();
 }
+// الآيفون بيكتم أصوات المتصفح لو زرار الصامت شغال. بنخلي جلسة الصوت «تشغيل» زي الفيديو، وبنشغّل صوت فاضي في الخلفية وقت الكلام.
+const SILENT_MP3 = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAACAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//sQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV';
+let keepAlive = null;
+function audioSessionPlayback() { try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { } }
+function keepAudio(on) {
+  try { if (!keepAlive) { keepAlive = new Audio(SILENT_MP3); keepAlive.loop = true; keepAlive.setAttribute('playsinline', ''); }
+    if (on) { audioSessionPlayback(); keepAlive.play().catch(() => {}); } else keepAlive.pause(); } catch (e) { }
+}
 function unlockSpeech() {
   if (speechUnlocked) return;
+  audioSessionPlayback(); keepAudio(true); setTimeout(() => { if (!(window.speechSynthesis && speechSynthesis.speaking)) keepAudio(false); }, 400);
   // الآيفون بيسمح بتشغيل الصوت بعد كده من نفس العنصر لو اتشغّل مرة من لمسة
   try { const a = azPlayer(); a.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAACAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//sQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'; a.play().then(() => a.pause()).catch(() => {}); } catch (e) { }
   if (!('speechSynthesis' in window)) { speechUnlocked = true; return; }
   speechUnlocked = true;
-  try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; u.lang = 'ar-EG'; speechSynthesis.speak(u); } catch (e) { }
+  try { const u = new SpeechSynthesisUtterance('ا'); u.volume = 0; u.rate = 2; u.lang = 'ar-SA'; speechSynthesis.speak(u); } catch (e) { }
 }
 ['touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockSpeech, { capture: true, passive: true }));
 function speak(text, onEnd, plain) {
@@ -2339,13 +2348,13 @@ function speak(text, onEnd, plain) {
   if (!plain && !speak.dev && (speak.gm || (gmOn() && !speak.az))) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     const voice = speak.gm; speak.token = (speak.token || 0) + 1;
-    gmSpeak(text, onEnd, voice).catch(e => { console.warn(e); toast(gmError(e)); if (voice) return; else if (azOn()) { speak.az = db.prefs.azVoice; speak(text, onEnd); speak.az = null; } else speak(text, onEnd, true); });
+    gmSpeak(text, onEnd, voice).catch(e => { console.warn(e); toast(gmError(e)); if (/ 400| 403| 404/.test(String(e.message))) { db.prefs.gmVoice = 'off'; save(); } if (voice) return; else if (azOn()) { speak.az = db.prefs.azVoice; speak(text, onEnd); speak.az = null; } else speak(text, onEnd, true); });
     return;
   }
   if (!plain && !speak.dev && (azOn() || speak.az)) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     const voice = speak.az; speak.token = (speak.token || 0) + 1;
-    azSpeak(text, onEnd, voice).catch(e => { console.warn(e); if (!speak.az) speak(text, onEnd, true); else toast('صوت Azure ماشتغلش: اتأكد من المفتاح والمنطقة والنت'); });
+    azSpeak(text, onEnd, voice).catch(e => { console.warn(e); if (/ 401| 403| 404/.test(String(e.message))) { db.prefs.azVoice = 'off'; save(); } if (!speak.az) speak(text, onEnd, true); else toast('صوت Azure ماشتغلش: اتأكد من المفتاح والمنطقة والنت'); });
     return;
   }
   if (azAudio) azAudio.pause();
@@ -2357,35 +2366,59 @@ function speak(text, onEnd, plain) {
   // جمل قصيرة واحدة ورا التانية: الآيفون بيقطّع في الجمل الطويلة
   const parts = say.replace(/([.؟!])\s+/g, '$1\n').split('\n').map(x => x.trim()).filter(Boolean);
   const token = speak.token = (speak.token || 0) + 1;
-  setTimeout(() => {
+  const go = () => {
     const list = arVoices();
-    // الآيفون لو مفيش صوت محدد بيقرا بالصوت الإنجليزي الافتراضي، فلازم صوت عربي دايماً
+    // الآيفون لو مفيش صوت محدد بيقرا بالإنجليزي، فبنستنى قائمة الأصوات مرة
     if (!list.length && !speak.waited) { speak.waited = true; setTimeout(() => speak(text, onEnd, plain), 700); return; }
-    const v = (plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI))) || list[0];
-    if (!v) { toast('مفيش صوت عربي على الجهاز. نزّل صوت عربي من إعدادات الآيفون'); return; }
-    let i = 0;
-    const next = () => {
+    const want = plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI));
+    let v = want || list[0] || null;
+    let i = 0, started = false, retried = false;
+    keepAudio(true);
+    const done = () => { curUtter = null; keepAudio(false); onEnd && onEnd(); };
+    const say1 = () => {
       if (token !== speak.token) return;
-      if (i >= parts.length) { curUtter = null; onEnd && onEnd(); return; }
-      const u = new SpeechSynthesisUtterance(parts[i++]);
+      if (i >= parts.length) return done();
+      const u = new SpeechSynthesisUtterance(parts[i]);
       try { if (v) u.voice = v; } catch (e) { }
       u.lang = v ? v.lang : 'ar-SA'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1; u.volume = 1;
-      u.onend = next;
-      u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; next(); };
+      u.onstart = () => { started = true; };
+      u.onend = () => { i++; say1(); };
+      u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; if (!started) return fail(); i++; say1(); };
       curUtter = u; // لازم نحتفظ بيه وإلا الآيفون ممكن يمسحه قبل ما يخلص
+      try { speechSynthesis.resume(); } catch (e) { }
       speechSynthesis.speak(u);
     };
-    next();
-  }, busy ? 150 : 30);
+    // لو الصوت ماابتداش خلال ثانيتين: نجرّب من غير تحديد صوت، ولو برده لأ نقول السبب
+    const fail = () => {
+      if (token !== speak.token || started) return;
+      speechSynthesis.cancel();
+      if (v && !retried) {
+        retried = true;
+        if (want) { db.prefs.badVoices = [...new Set([...(db.prefs.badVoices || []), want.voiceURI])]; if (db.prefs.voiceURI === want.voiceURI) db.prefs.voiceURI = ''; save(); }
+        v = null; setTimeout(() => { say1(); setTimeout(fail, 2000); }, 150); return;
+      }
+      keepAudio(false);
+      toast('الصوت مش طالع: علّي صوت الموبايل واقفل الوضع الصامت، وجرّب تاني');
+      onEnd && onEnd();
+    };
+    say1(); setTimeout(fail, 2000);
+  };
+  // من غير تأخير لو ممكن، عشان الآيفون يعتبر الكلام جاي من لمسة
+  if (busy) setTimeout(go, 150); else go();
 }
 // أمثلة الأصوات: كل صوت عربي على الجهاز بزرار تشغيل، والمستخدم يختار اللي يعجبه
 const VOICE_SAMPLE = 'أهلاً يا يوسف، صرفت النهارده 250 جنيه، وتقدر تصرف 400 في اليوم لحد القبض.';
 const voiceQuality = v => /premium|مميز/i.test(v.name) ? 'مميز' : /enhanced|محسّن|neural|natural/i.test(v.name) ? 'محسّن' : 'عادي';
 function openVoicePicker() {
-  const list = arVoices();
+  const bad = db.prefs.badVoices || []; const seen = new Set();
+  const list = arVoices().filter(v => !bad.includes(v.voiceURI) && !seen.has(v.name) && seen.add(v.name));
   const row = (uri, name, sub, q) => `<div class="item"><button class="btn small" data-play="${esc(uri)}">${ic('speaker')}</button><div class="grow"><div class="ellipsis">${esc(name)}</div><div class="muted">${sub}</div></div>
     ${q ? `<span class="pill">${q}</span>` : ''}<button class="chip ${(db.prefs.voiceURI || '') === uri ? 'on' : ''}" data-pick="${esc(uri)}">${(db.prefs.voiceURI || '') === uri ? '✓ مختار' : 'اختار'}</button></div>`;
-  sheet('أمثلة الأصوات', `<p class="muted">اضغط ${ic('speaker', 'inl')} تسمع كل صوت، واختار اللي يعجبك. الأصوات دي من الآيفون نفسه، فالتطبيق مايقدرش يجيب غيرها.</p>
+  sheet('أمثلة الأصوات', `<p class="muted">اضغط ${ic('speaker', 'inl')} تسمع كل صوت، واختار اللي يعجبك. «تلقائي» هو الصوت المضمون. أي صوت مايشتغلش بيختفي من القايمة لوحده.</p>
+    <h3>أصوات الموبايل (من غير نت)</h3>
+    <div class="list">${row('', 'تلقائي (مضمون)', 'أحسن صوت عربي على موبايلك', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>${bad.length ? `<button class="btn small" id="vBadReset" style="margin-top:6px">إظهار الأصوات المخفية (${bad.length})</button>` : ''}
+    ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}
+    <details style="margin-top:16px" ${db.prefs.gmKey || db.prefs.azKey ? 'open' : ''}><summary><b>أصوات أونلاين أطبع (محتاجة مفتاح ونت)</b></summary>
     <h3>أصوات Google Gemini (زي AI Studio)</h3>
     <div class="list">${Object.entries(GM_VOICES).map(([k, n]) => `<div class="item"><button class="btn small" data-gmplay="${k}">${ic('speaker')}</button><div class="grow"><div>${n}</div><div class="muted">${db.prefs.gmKey ? 'Gemini · محتاج نت' : 'حط المفتاح تحت الأول'}</div></div>
       <button class="chip ${gmOn() && db.prefs.gmVoice === k ? 'on' : ''}" data-gmpick="${k}">${gmOn() && db.prefs.gmVoice === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
@@ -2404,9 +2437,9 @@ function openVoicePicker() {
       <button class="btn block" id="azSave" style="margin-top:8px">حفظ المفتاح</button>
       <ol class="steps muted" style="margin-top:8px"><li>ادخل portal.azure.com واعمل حساب مجاني</li><li>Create a resource ← <b>Speech</b> ← اختار Free F0 والمنطقة West Europe</li><li>من Keys and Endpoint انسخ <b>Key 1</b> والـ <b>Location</b> وحطهم هنا</li></ol>
       <p class="muted">المجاني 500 ألف حرف في الشهر. جملة الرد بس اللي بتتبعت لـ Microsoft عشان تتقري، وباقي بياناتك على موبايلك.</p></details>
-    <h3>أصوات الآيفون (من غير نت)</h3>
-    <div class="list">${row('', 'تلقائي', 'أحسن صوت متاح', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>
-    ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}`, () => {
+    </details>
+`, () => {
+    if ($('#vBadReset')) $('#vBadReset').onclick = () => { db.prefs.badVoices = []; save(); openVoicePicker(); };
     document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak.dev = true; speak(VOICE_SAMPLE); speak.only = null; speak.dev = false; });
     document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; db.prefs.azVoice = 'off'; db.prefs.gmVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
     $('#gmSave').onclick = () => { db.prefs.gmKey = $('#gmKey').value.trim(); if (!db.prefs.gmVoice || db.prefs.gmVoice === 'off') db.prefs.gmVoice = 'Kore'; save(); speak.gm = db.prefs.gmVoice; speak(VOICE_SAMPLE); speak.gm = null; openVoicePicker(); };
@@ -2588,7 +2621,7 @@ function quickVoice() {
     if (!heard.trim()) return;
     const r = handleVoice(heard);
     if (r.silent) return;
-    voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); setTimeout(() => speak(r.reply), 350);
+    voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); setTimeout(() => speak(r.reply), 700);
   };
   try { vRec.start(); } catch (e) { vRec = null; $('#vfab').classList.remove('on'); openVoice(); }
 }
@@ -2616,7 +2649,7 @@ function openVoice() {
       if (r.silent) return;
       out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '') + (r.go ? `<button class="btn small primary" id="vOpen">افتح ${esc(r.goLabel)}</button>` : '');
       if (r.go) $('#vOpen').onclick = r.go;
-      setTimeout(() => speak(r.reply), 250);
+      setTimeout(() => speak(r.reply), 600);
       if (r.undoId) $('#vUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== r.undoId); save(); out.innerHTML = insH('alert', 'اتلغت'); };
       $('#vText').value = '';
     };
