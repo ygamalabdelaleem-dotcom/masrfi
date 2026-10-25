@@ -1767,25 +1767,59 @@ const SPOKEN = [['النهارده', 'اليوم'], ['انهارده', 'اليو
   ['أكتر', 'أكثر'], ['اكتر', 'أكثر'], ['أقل من', 'أقل من'], ['يعني', 'أي'], ['لسه', 'ما زال'], ['بس', 'فقط'], ['قول', 'قل'], ['اضغط', 'اضغط'], ['المية', 'المئة'], ['تمام', 'حسناً'],
   ['شغلك', 'عملك'], ['شغل', 'عمل'], ['القبض', 'الراتب'], ['المرتب', 'الراتب'], ['مرتبك', 'راتبك'], ['وفّرت', 'وفرت'], ['هنا', 'هنا']];
 const SPOKEN_RE = SPOKEN.map(([a, b]) => [new RegExp(`(^|[\\s،.؟!:])(و?)${a}(?=$|[\\s،.؟!:])`, 'g'), `$1$2${b}`]);
-function speechText(text) {
+function speechText(text, colloquial) {
   let t = String(text).replace(/<[^>]+>/g, '').replace(/[⁦-⁩]/g, '')
     .replace(/(\d),(?=\d{3})/g, '$1').replace(/(\d+)\.00\b/g, '$1').replace(/(\d+)\.(\d)\d?\b/g, (m, a, b) => +b ? m : a)
     .replace(/\bEGP\b/g, 'جنيه').replace(/%/g, ' في المئة').replace(/[\u{1F300}-\u{1FAFF}☀-➿️📌•«»()]/gu, '').replace(/ـ/g, '');
-  SPOKEN_RE.forEach(([re, to]) => { t = t.replace(re, to); });
+  if (!colloquial) SPOKEN_RE.forEach(([re, to]) => { t = t.replace(re, to); });
   return t.replace(/\s+/g, ' ').trim();
 }
 // الآيفون: لازم أول نطق يحصل من لمسة، والـ cancel قبل speak على طول بيضيّع الكلام،
 // وبعد المايك محتاج لحظة عشان الصوت يرجع للسماعة. لو الصوت المختار ماشتغلش بنرجع للصوت الافتراضي.
 let curUtter = null, speechUnlocked = false;
+// صوت مصري طبيعي من Azure (اختياري): محتاج مفتاح ونت، ولو فشل بيرجع لصوت الجهاز
+const AZ_VOICES = { 'ar-EG-SalmaNeural': 'سلمى (مصري)', 'ar-EG-ShakirNeural': 'شاكر (مصري)' };
+const azOn = () => !!(db.prefs.azKey && db.prefs.azRegion && db.prefs.azVoice !== 'off');
+const azCache = new Map();
+let azAudio = null;
+function azPlayer() { if (!azAudio) { azAudio = new Audio(); azAudio.preload = 'auto'; } return azAudio; }
+async function azSpeak(text, onEnd, voice) {
+  const say = speechText(text, true); if (!say) return;
+  const v = voice || db.prefs.azVoice || 'ar-EG-SalmaNeural';
+  const rate = Math.round(((db.prefs.voiceRate || 0.95) - 1) * 100);
+  const key = v + rate + say;
+  let url = azCache.get(key);
+  if (!url) {
+    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ar-EG"><voice name="${v}"><prosody rate="${rate}%">${say.replace(/[<&>]/g, c => ({ '<': '&lt;', '&': '&amp;', '>': '&gt;' }[c]))}</prosody></voice></speak>`;
+    const r = await fetch(`https://${db.prefs.azRegion}.tts.speech.microsoft.com/cognitiveservices/v1`, { method: 'POST',
+      headers: { 'Ocp-Apim-Subscription-Key': db.prefs.azKey, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3' }, body: ssml });
+    if (!r.ok) throw new Error('azure ' + r.status);
+    url = URL.createObjectURL(await r.blob());
+    if (azCache.size > 40) azCache.delete(azCache.keys().next().value);
+    azCache.set(key, url);
+  }
+  const a = azPlayer(); a.pause(); a.src = url; a.onended = () => onEnd && onEnd();
+  await a.play();
+}
 function unlockSpeech() {
-  if (speechUnlocked || !('speechSynthesis' in window)) return;
+  if (speechUnlocked) return;
+  // الآيفون بيسمح بتشغيل الصوت بعد كده من نفس العنصر لو اتشغّل مرة من لمسة
+  try { const a = azPlayer(); a.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAACAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//sQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'; a.play().then(() => a.pause()).catch(() => {}); } catch (e) { }
+  if (!('speechSynthesis' in window)) { speechUnlocked = true; return; }
   speechUnlocked = true;
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; u.lang = 'ar-EG'; speechSynthesis.speak(u); } catch (e) { }
 }
 ['touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockSpeech, { capture: true, passive: true }));
 function speak(text, onEnd, plain) {
-  if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
   if (db.prefs.voiceOff) { onEnd && setTimeout(onEnd, 2500); return; }
+  if (!plain && (azOn() || speak.az)) {
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    const voice = speak.az; speak.token = (speak.token || 0) + 1;
+    azSpeak(text, onEnd, voice).catch(e => { console.warn(e); if (!speak.az) speak(text, onEnd, true); else toast('صوت Azure ماشتغلش: اتأكد من المفتاح والمنطقة والنت'); });
+    return;
+  }
+  if (azAudio) azAudio.pause();
+  if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
   const say = speechText(text); if (!say) return;
   const only = speak.only;
   const busy = speechSynthesis.speaking || speechSynthesis.pending;
@@ -1819,10 +1853,24 @@ function openVoicePicker() {
   const row = (uri, name, sub, q) => `<div class="item"><button class="btn small" data-play="${esc(uri)}">${ic('speaker')}</button><div class="grow"><div class="ellipsis">${esc(name)}</div><div class="muted">${sub}</div></div>
     ${q ? `<span class="pill">${q}</span>` : ''}<button class="chip ${(db.prefs.voiceURI || '') === uri ? 'on' : ''}" data-pick="${esc(uri)}">${(db.prefs.voiceURI || '') === uri ? '✓ مختار' : 'اختار'}</button></div>`;
   sheet('أمثلة الأصوات', `<p class="muted">اضغط ${ic('speaker', 'inl')} تسمع كل صوت، واختار اللي يعجبك. الأصوات دي من الآيفون نفسه، فالتطبيق مايقدرش يجيب غيرها.</p>
+    <h3>صوت مصري طبيعي (Azure)</h3>
+    <div class="list">${Object.entries(AZ_VOICES).map(([k, n]) => `<div class="item"><button class="btn small" data-azplay="${k}">${ic('speaker')}</button><div class="grow"><div>${n}</div><div class="muted">${db.prefs.azKey ? 'Microsoft Azure · محتاج نت' : 'حط المفتاح تحت الأول'}</div></div><span class="pill">طبيعي</span>
+      <button class="chip ${azOn() && (db.prefs.azVoice || 'ar-EG-SalmaNeural') === k ? 'on' : ''}" data-azpick="${k}">${azOn() && (db.prefs.azVoice || 'ar-EG-SalmaNeural') === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
+    <details style="margin:8px 0 14px" ${db.prefs.azKey ? '' : 'open'}><summary class="muted">مفتاح Azure (مرة واحدة)</summary>
+      <label class="f">المفتاح (Key)</label><input class="in" id="azKey" value="${esc(db.prefs.azKey || '')}" autocomplete="off" placeholder="الصق المفتاح هنا">
+      <label class="f">المنطقة (Region)</label><input class="in" id="azRegion" value="${esc(db.prefs.azRegion || 'westeurope')}" placeholder="westeurope">
+      <button class="btn block" id="azSave" style="margin-top:8px">حفظ المفتاح</button>
+      <ol class="steps muted" style="margin-top:8px"><li>ادخل portal.azure.com واعمل حساب مجاني</li><li>Create a resource ← <b>Speech</b> ← اختار Free F0 والمنطقة West Europe</li><li>من Keys and Endpoint انسخ <b>Key 1</b> والـ <b>Location</b> وحطهم هنا</li></ol>
+      <p class="muted">المجاني 500 ألف حرف في الشهر. جملة الرد بس اللي بتتبعت لـ Microsoft عشان تتقري، وباقي بياناتك على موبايلك.</p></details>
+    <h3>أصوات الآيفون (من غير نت)</h3>
     <div class="list">${row('', 'تلقائي', 'أحسن صوت متاح', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>
     ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}`, () => {
     document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak(VOICE_SAMPLE); speak.only = null; });
-    document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
+    document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; db.prefs.azVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
+    const azRead = () => { db.prefs.azKey = $('#azKey').value.trim(); db.prefs.azRegion = ($('#azRegion').value.trim() || 'westeurope').toLowerCase().replace(/\s+/g, ''); };
+    $('#azSave').onclick = () => { azRead(); if (db.prefs.azVoice === 'off' || !db.prefs.azVoice) db.prefs.azVoice = 'ar-EG-SalmaNeural'; save(); speak.az = db.prefs.azVoice; speak(VOICE_SAMPLE); speak.az = null; openVoicePicker(); };
+    document.querySelectorAll('[data-azplay]').forEach(b => b.onclick = () => { if ($('#azKey').value.trim()) azRead(); if (!db.prefs.azKey) return toast('حط مفتاح Azure الأول'); speak.az = b.dataset.azplay; speak(VOICE_SAMPLE); speak.az = null; });
+    document.querySelectorAll('[data-azpick]').forEach(b => b.onclick = () => { if ($('#azKey').value.trim()) azRead(); if (!db.prefs.azKey) return toast('حط مفتاح Azure الأول'); db.prefs.azVoice = b.dataset.azpick; save(); openVoicePicker(); toast('تم اختيار ' + AZ_VOICES[b.dataset.azpick]); });
   });
 }
 function voiceSettingsHtml() {
