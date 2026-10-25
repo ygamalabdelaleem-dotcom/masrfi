@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>محفظتي</title>
+<meta name="description" content="محفظتي: إدارة المصروفات الشخصية، تعمل بدون إنترنت وبياناتك على جهازك فقط.">
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="محفظتي">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="lock" class="lock hidden">
+  <div class="lock-box">
+    <div class="lock-logo">💰</div>
+    <h2>محفظتي</h2>
+    <p>أدخل رمز PIN</p>
+    <input id="pinIn" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off">
+    <button class="btn primary" id="pinGo">فتح</button>
+    <p id="pinErr" class="err"></p>
+  </div>
+</div>
+
+<header class="top">
+  <h1 id="title">محفظتي</h1>
+</header>
+
+<main id="view"></main>
+
+<nav class="tabs">
+  <button data-tab="home" class="on"><span>🏠</span>الرئيسية</button>
+  <button data-tab="txns"><span>📋</span>الحركات</button>
+  <button data-tab="add" class="add"><span>＋</span></button>
+  <button data-tab="reports"><span>📊</span>التقارير</button>
+  <button data-tab="more"><span>⚙️</span>المزيد</button>
+</nav>
+
+<div id="sheet" class="sheet hidden">
+  <div class="sheet-bg"></div>
+  <div class="sheet-card">
+    <div class="sheet-head"><b id="sheetTitle"></b><button class="x" id="sheetClose">✕</button></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+<div id="iosHint" class="ios-hint hidden">
+  لتثبيت التطبيق على الآيفون: اضغط زر المشاركة <b>⬆︎</b> في Safari ثم <b>«إضافة إلى الشاشة الرئيسية»</b>.
+  <button class="x" id="iosHintClose">✕</button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
