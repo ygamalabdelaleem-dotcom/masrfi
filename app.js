@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '41';
+const APP_VERSION = '42';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -546,7 +546,7 @@ function renderHome() {
   const hS = $('#hSpend'); if (hS) hS.onclick = () => openSpend();
   view().querySelectorAll('[data-cat]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.cat, period: 'MONTH' }; setTab('txns'); });
   if ($('#hSpeak')) $('#hSpeak').onclick = () => speak(dailyPlan().tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. '));
-  $('#hMic').onclick = openChat;
+  $('#hMic').onclick = () => openChat(true);
   if ($('#hRisk')) $('#hRisk').onclick = () => setTab('ctrl');
   if ($('#hProf')) $('#hProf').onclick = () => openOnboarding();
   view().querySelectorAll('[data-q]').forEach(b => b.onclick = qa[b.dataset.q]);
@@ -2671,7 +2671,7 @@ function openVoice() {
 const chatGo = new Map();
 const CHAT_SUGG = ['فاضلي كام؟', 'صرفت كام النهارده؟', 'صرفت 100 أكل', 'وضعي المالي عامل إيه؟', 'أكتر حاجة بصرف عليها', 'الأقساط', 'إزاي أضيف مصروف ثابت؟', 'جولة في البرنامج'];
 let chatRec = null;
-function openChat() {
+function openChat(listen) {
   let el = $('#chat');
   if (!el) { el = document.createElement('div'); el.id = 'chat'; el.className = 'chat hidden'; document.body.appendChild(el); }
   db.chat = db.chat || [];
@@ -2680,14 +2680,14 @@ function openChat() {
       <button class="icon-btn" id="cMute" aria-label="الصوت">${db.prefs.voiceOff ? '🔇' : '🔊'}</button><button class="icon-btn" id="cMore" aria-label="الإعدادات">${ic('settings')}</button></div>
     <div class="chat-list" id="cList"></div>
     <div class="chat-sugg" id="cSugg">${CHAT_SUGG.map(x => `<button class="chip" data-cs="${esc(x)}">${esc(x)}</button>`).join('')}</div>
-    <div class="chat-bar"><textarea id="cIn" rows="1" placeholder="اكتب رسالتك..."></textarea>
-      ${SR ? `<button class="c-mic" id="cMic" aria-label="مايك">${ic('mic')}</button>` : ''}<button class="c-send" id="cSend" aria-label="إرسال">➤</button></div>`;
+    ${SR ? `<div class="chat-voice"><button class="c-mic" id="cMic" aria-label="مايك">${ic('mic')}</button><div class="muted" id="cHint">دوس واتكلم</div></div>` : ''}
+    <div class="chat-bar"><textarea id="cIn" rows="1" placeholder="أو اكتب هنا..."></textarea><button class="c-send" id="cSend" aria-label="إرسال">➤</button></div>`;
   el.classList.remove('hidden'); document.body.style.overflow = 'hidden';
   const list = $('#cList');
   const bubble = m => `<div class="msg ${m.me ? 'me' : 'bot'}" data-mid="${m.id}"><div class="bub">${esc(m.text)}${m.undo && !m.undone ? `<div><button class="btn small" data-cu="${m.id}">تراجع</button></div>` : ''}${chatGo.has(m.id) ? `<div><button class="btn small primary" data-cg="${m.id}">افتح ${esc(m.goLabel || '')}</button></div>` : ''}</div>
     ${m.me ? '' : `<button class="c-say" data-cy="${m.id}" aria-label="اسمع">${ic('speaker')}</button>`}</div>`;
   const draw = () => {
-    list.innerHTML = db.chat.length ? db.chat.map(bubble).join('') : `<div class="msg bot"><div class="bub">أهلاً 👋 أنا مساعدك المالي. اكتبلي أو دوس على المايك وقول مثلاً «صرفت 150 أكل» أو «فاضلي كام».</div></div>`;
+    list.innerHTML = db.chat.length ? db.chat.map(bubble).join('') : `<div class="msg bot"><div class="bub">أهلاً 👋 أنا مساعدك المالي. اتكلم وقول مثلاً «صرفت 150 أكل» أو «فاضلي كام».</div></div>`;
     list.scrollTop = list.scrollHeight;
     list.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cu); db.txns = db.txns.filter(x => x.id !== m.undo); m.undone = true; save(); render(); add(false, 'اتلغت الحركة'); });
     list.querySelectorAll('[data-cg]').forEach(b => b.onclick = () => { const f = chatGo.get(+b.dataset.cg); closeChat(); f && f(); });
@@ -2718,14 +2718,16 @@ function openChat() {
     let heard = '';
     chatRec = new SR(); chatRec.lang = 'ar-EG'; chatRec.interimResults = true;
     const mt = micTimers(chatRec);
-    $('#cMic').classList.add('on'); $('#cSt').textContent = 'بسمعك...';
+    $('#cMic').classList.add('on'); $('#cSt').textContent = 'بسمعك...'; $('#cHint').textContent = 'بسمعك... اتكلم (دوس تاني للإيقاف)';
     chatRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); $('#cIn').value = heard; fit(); mt.heard(); };
     chatRec.onerror = e => { $('#cSt').textContent = e.error === 'not-allowed' ? 'اسمح بالمايك من إعدادات الآيفون' : 'ماسمعتش كويس'; };
-    chatRec.onend = () => { mt.clear(); chatRec = null; const b = $('#cMic'); if (!b) return; b.classList.remove('on');
+    chatRec.onend = () => { mt.clear(); chatRec = null; const b = $('#cMic'); if (!b) return; b.classList.remove('on'); $('#cHint').textContent = 'دوس واتكلم';
       if (heard.trim()) { $('#cSt').textContent = 'اكتب أو اتكلم'; setTimeout(() => send(heard, true), 500); } else if ($('#cSt').textContent === 'بسمعك...') $('#cSt').textContent = 'ماسمعتش حاجة، دوس على المايك تاني'; };
     try { chatRec.start(); } catch (e) { chatRec = null; $('#cMic').classList.remove('on'); }
   };
   draw();
+  // الصوت أساسي: أول ما الشات يفتح من المايك يبدأ يسمع على طول (لازم يحصل جوه نفس اللمسة)
+  if (listen === true && SR) $('#cMic').onclick(); else if (!SR) $('#cIn').focus();
 }
 function closeChat() { const el = $('#chat'); if (!el) return; if (chatRec) try { chatRec.abort(); } catch (e) { } el.classList.add('hidden'); document.body.style.overflow = ''; }
 
@@ -3285,7 +3287,7 @@ document.querySelector('.sheet-bg').onclick = closeSheet;
 $('#pinGo').onclick = tryUnlock;
 $('#faceGo').onclick = bioUnlock;
 $('#vfab').innerHTML = ic('mic');
-$('#vfab').onclick = openChat;
+$('#vfab').onclick = () => openChat(true);
 $('#faceGo').innerHTML = ic('faceid') + '<span>فتح بـ Face ID</span>';
 $('#pinIn').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
 $('#settingsBtn').onclick = openSettings;

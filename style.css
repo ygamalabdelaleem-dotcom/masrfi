@@ -384,9 +384,11 @@ svg.i.inl { display: inline-block; width: 16px; height: 16px; vertical-align: -3
 .chat-sugg .chip { white-space: nowrap; flex: none; }
 .chat-bar { display: flex; align-items: flex-end; gap: 8px; padding: 8px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--card); }
 .chat-bar textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 20px; padding: 10px 14px; font: inherit; font-size: 16px; background: var(--bg); color: var(--text, inherit); max-height: 120px; }
-.c-mic, .c-send { width: 44px; height: 44px; border-radius: 50%; border: 0; flex: none; display: grid; place-items: center; font-size: 18px; }
-.c-mic { background: var(--chip); color: var(--primary); }
+.c-send { width: 44px; height: 44px; border-radius: 50%; border: 0; flex: none; display: grid; place-items: center; font-size: 18px; }
+.chat-voice { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 10px; }
+.c-mic { width: 76px; height: 76px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--primary); color: #fff; box-shadow: 0 6px 18px #0b4f9c44; }
 .c-mic.on { background: #e53935; color: #fff; animation: pulse 1.2s infinite; }
 .c-send { background: var(--primary); color: #fff; transform: scaleX(-1); }
-.c-mic svg.i { width: 22px; height: 22px; }
-@keyframes pulse { 50% { box-shadow: 0 0 0 8px #e5393533; } }
+.c-mic svg.i { width: 34px; height: 34px; }
+.chat-voice .muted { font-size: 13px; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 16px #e5393522; } }
