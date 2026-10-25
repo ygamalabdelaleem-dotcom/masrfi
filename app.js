@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '48';
+const APP_VERSION = '49';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2476,10 +2476,10 @@ function wordsToNumber(t) {
   }
   return found ? total + cur : null;
 }
-const VOICE_SYN = { cat_food: ['اكل', 'أكل', 'مطعم', 'مطاعم', 'طعام', 'غدا', 'عشا', 'فطار', 'سوبر ماركت', 'بقاله'], cat_transport: ['مواصلات', 'بنزين', 'اوبر', 'تاكسي', 'عربيه', 'مترو'],
-  cat_bills: ['فاتوره', 'فواتير', 'كهربا', 'كهرباء', 'مياه', 'غاز', 'نت'], cat_shopping: ['تسوق', 'شوبينج', 'مشتريات'], cat_health: ['دكتور', 'دوا', 'علاج', 'صيدليه', 'صحه'],
-  cat_fun: ['خروج', 'سينما', 'ترفيه', 'كافيه', 'قهوه'], cat_telecom: ['رصيد', 'شحن', 'موبايل', 'باقه'], cat_clothes: ['هدوم', 'لبس', 'ملابس', 'جزمه'], cat_rent: ['ايجار', 'إيجار'],
-  cat_edu: ['دروس', 'مدرسه', 'كورس', 'جامعه'], cat_gifts: ['هديه', 'هدايا'], cat_salary: ['مرتب', 'راتب'], cat_bonus: ['مكافأه', 'بونص'] };
+const VOICE_SYN = { cat_food: ['اكل', 'أكل', 'اكله', 'مطعم', 'مطاعم', 'طعام', 'غدا', 'غداء', 'عشا', 'عشاء', 'فطار', 'فطور', 'سوبر ماركت', 'سوبرماركت', 'ماركت', 'بقاله', 'طلبات', 'كشري', 'فول', 'طعميه', 'فلافل', 'شاورما', 'بيتزا', 'برجر', 'كريب', 'فراخ', 'لحمه', 'سمك', 'خضار', 'فاكهه', 'عيش', 'خبز', 'لبن', 'جبنه', 'بيض', 'رز', 'سكر', 'زيت', 'حلويات', 'حلو', 'عصير', 'مياه معدنيه', 'تموين', 'كارفور', 'خير زمان', 'اولاد رجب', 'هايبر', 'ماكدونالدز', 'كنتاكي', 'مندي', 'سندوتشات', 'سندوتش'], cat_transport: ['مواصلات', 'بنزين', 'سولار', 'اوبر', 'كريم', 'اندرايفر', 'ديدي', 'تاكسي', 'عربيه', 'العربيه', 'مترو', 'ميكروباص', 'مكروباص', 'اتوبيس', 'توكتوك', 'تكتك', 'قطر', 'قطار', 'جراج', 'ركنه', 'باركنج', 'غسيل العربيه', 'كارته', 'مخالفه', 'صيانه العربيه', 'زيت العربيه', 'كاوتش'],
+  cat_bills: ['فاتوره', 'فواتير', 'كهربا', 'كهرباء', 'النور', 'مياه', 'الميه', 'غاز', 'نت', 'انترنت', 'راوتر', 'وي', 'صيانه', 'سباك', 'كهربائي', 'نضافه', 'منظفات', 'زباله'], cat_health: ['دكتور', 'دكتوره', 'كشف', 'دوا', 'دواء', 'ادويه', 'علاج', 'صيدليه', 'صحه', 'تحاليل', 'تحليل', 'اشعه', 'مستشفي', 'اسنان', 'نضاره', 'جيم', 'نادي'],
+  cat_fun: ['خروج', 'خروجه', 'سينما', 'ترفيه', 'كافيه', 'قهوه', 'شاي', 'نسكافيه', 'ستاربكس', 'سجاير', 'سجائر', 'شيشه', 'بلايستيشن', 'نتفليكس', 'شاهد', 'سبوتيفاي', 'العاب', 'لعب', 'فسحه', 'رحله'], cat_telecom: ['رصيد', 'شحن', 'شحنت', 'كارت شحن', 'موبايل', 'باقه', 'فودافون', 'اورنج', 'اتصالات'], cat_clothes: ['هدوم', 'لبس', 'ملابس', 'جزمه', 'كوتشي', 'تيشيرت', 'قميص', 'بنطلون', 'جاكيت', 'شنطه', 'حلاق', 'حلاقه', 'كوافير'], cat_rent: ['ايجار', 'إيجار'],
+  cat_edu: ['دروس', 'درس', 'مدرسه', 'كورس', 'جامعه', 'كتب', 'كتاب', 'كشكول', 'مصاريف الدراسه', 'امتحان'], cat_gifts: ['هديه', 'هدايا', 'نقطه', 'عيديه', 'صدقه', 'زكاه', 'تبرع'], cat_shopping: ['تسوق', 'شوبينج', 'مشتريات', 'امازون', 'نون', 'جوميا', 'اداوات', 'ادوات', 'اجهزه', 'شاحن', 'سماعه'], cat_family: ['البيت', 'مصروف البيت', 'ماما', 'بابا', 'اخويا', 'اختي', 'مراتي', 'العيال', 'الاولاد'], cat_salary: ['مرتب', 'راتب'], cat_bonus: ['مكافأه', 'بونص'] };
 function parseVoice(raw) {
   const t = normDigits(raw).toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').trim();
   if (/(^|\s)(كم|كام|قد ايه|اد ايه|بكام|اجمالي)\s/.test(t + ' ') && !/^(صرفت|دفعت|اشتريت)\s+\d/.test(t)) return { question: true, text: raw };
@@ -2519,7 +2519,11 @@ function catInText(t) {
 }
 function dataReply(t) {
   if (/(ازاي|كيف|يعني ايه|اشرح|اضيف|اعمل ايه|هعمل ايه)/.test(t) || /(^|\s)لو\s/.test(t)) return null;
-  if (/\d/.test(t) && /(صرفت|دفعت|اشتريت|قبضت|استلمت|جالي)\s*\d/.test(t)) return null;
+  const isQ = /(كام|قد ايه|اد ايه|(^|\s)كم\s|اجمالي|امتي|امتى|فين|ليه|هل)/.test(t);
+  const hasAmt = /\d/.test(t) || wordsToDigits(t) !== t;
+  if (/(صرفت|دفعت|اشتريت|جبت|حطيت|شحنت|قبضت|استلمت|جالي|اتحولي)/.test(t) && !isQ && hasAmt) return null;
+  // «بنزين 300 بالكارت»: بند + مبلغ من غير سؤال = تسجيل مصروف
+  if (!isQ && hasAmt && catOfWords(t, false)) return null;
   // ميعاد المرتب / القبض
   const PAYW = /(المرتب|مرتب|القبض|قبض|الراتب|راتب|الماهيه|الشهريه|يوم الدفع)/;
   if (PAYW.test(t) && /(كام يوم|كم يوم|امتي|امتى|ميعاد|موعد|فاضل|باقي|متبقي|لسه|قرب|هقبض|هنقبض|ينزل|نازل)/.test(t) && !/\d{3,}/.test(t)) {
@@ -2637,6 +2641,93 @@ async function askAI(question) {
   throw last;
 }
 
+// ================= تسجيل المصاريف بالكلام (أهم حاجة) =================
+// بيفهم: كذا مصروف في جملة واحدة، الأرقام بالكلام (ميتين، ألف ونص)، المبلغ قبل أو بعد البند، الحساب أو الكارت، وامبارح.
+const NW = { واحد: 1, واحده: 1, اتنين: 2, اثنين: 2, تلاته: 3, تلات: 3, ثلاثه: 3, اربعه: 4, اربع: 4, خمسه: 5, خمس: 5, سته: 6, سبعه: 7, سبع: 7, تمانيه: 8, تمن: 8, ثمانيه: 8, تسعه: 9, تسع: 9, عشره: 10,
+  حداشر: 11, اتناشر: 12, تلتاشر: 13, اربعتاشر: 14, خمستاشر: 15, ستاشر: 16, سبعتاشر: 17, تمنتاشر: 18, تسعتاشر: 19,
+  عشرين: 20, تلاتين: 30, ثلاثين: 30, اربعين: 40, خمسين: 50, ستين: 60, سبعين: 70, تمانين: 80, ثمانين: 80, تسعين: 90,
+  ميه: 100, مايه: 100, مائه: 100, ميتين: 200, مئتين: 200, تلتميه: 300, تلاتميه: 300, ربعميه: 400, اربعميه: 400, خمسميه: 500, ستميه: 600, سبعميه: 700, تمنميه: 800, تسعميه: 900 };
+const isNW = w => NW[w] != null || /^(الف|الاف|آلاف|تلاف|الفين|مليون|نص|ربع)$/.test(w);
+function wordsToDigits(t) {
+  const w = t.split(/\s+/); const out = []; let i = 0;
+  while (i < w.length) {
+    let x = w[i]; if (/^و./.test(x) && isNW(x.slice(1)) && !/^(نص|ربع)$/.test(x.slice(1))) { out.push('و'); w[i] = x = x.slice(1); }
+    const startsNum = isNW(x) && !/^(نص|ربع|الف|الاف|تلاف)$/.test(x) || (/^\d+(\.\d+)?$/.test(x) && /^(الف|الاف|آلاف|تلاف)$/.test(w[i + 1] || '')) || /^(الف|الفين)$/.test(x);
+    if (!startsNum) { out.push(x); i++; continue; }
+    let total = 0, cur = 0, lastMag = 1, any = false;
+    while (i < w.length) {
+      let y = w[i], joined = false;
+      if (any && /^و./.test(y) && (isNW(y.slice(1)))) { y = y.slice(1); joined = true; }
+      else if (any && y === 'و' && isNW(w[i + 1] || '')) { i++; continue; }
+      if (/^\d+(\.\d+)?$/.test(y) && !any) { cur = +y; any = true; i++; continue; }
+      if (!isNW(y)) break;
+      if (any && !joined && NW[y] != null && cur && NW[y] < 100 && cur % 100 === 0 && w[i - 1] !== 'و') { /* «ميه خمسين» = 150 */ }
+      if (/^(الف|الاف|آلاف|تلاف)$/.test(y)) { total += (cur || 1) * 1000; cur = 0; lastMag = 1000; }
+      else if (y === 'الفين') { total += 2000; lastMag = 1000; }
+      else if (y === 'مليون') { total += (cur || 1) * 1e6; cur = 0; lastMag = 1e6; }
+      else if (y === 'نص') { if (!any) break; if (cur) cur += (cur >= 100 ? 50 : 0.5); else total += lastMag / 2; }
+      else if (y === 'ربع') { if (!any) break; if (cur) cur += (cur >= 100 ? 25 : 0.25); else total += lastMag / 4; }
+      else { cur += NW[y]; if (NW[y] >= 100) lastMag = 100; }
+      any = true; i++;
+    }
+    out.push(String(total + cur));
+  }
+  return out.join(' ');
+}
+const XVERB = /^(صرفت|دفعت|اشتريت|جبت|حطيت|شحنت|قبضت|استلمت|جالي|دخلي|كسبت|اتحولي|خدت)$/;
+const INC_VERB = /(قبضت|استلمت|جالي|دخلي|كسبت|اتحولي|مرتب|راتب|مكافاه|بونص)/;
+function catOfWords(t, income) {
+  let best = null;
+  db.categories.filter(c => c.isIncome === income).forEach(c => [lbl(c.name), ...(VOICE_SYN[c.name] || [])].map(nrm).forEach(n => {
+    if (n.length >= 2 && new RegExp('(^|\\s)(ال|ب|بال|لل|ل|و|وال)?' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|\\s)').test(t) && (!best || n.length > best.n.length)) best = { c, n }; }));
+  return best && best.c.id;
+}
+function accOfWords(t) {
+  const live = db.accounts.filter(a => !a.archived);
+  const byName = live.find(a => nrm(lbl(a.name)).length > 2 && t.includes(nrm(lbl(a.name)))); if (byName) return byName.id;
+  if (/(بالكارت|بالفيزا|فيزا|كريدت|الكريدت|بالبطاقه|ماستر)/.test(t)) { const c = live.find(a => a.type === 'CREDIT'); if (c) return c.id; }
+  if (/(كاش|نقدي|من جيبي|فلوس سايله)/.test(t)) { const c = live.find(a => a.type === 'CASH'); if (c) return c.id; }
+  if (/(انستاباي|انستا باي|فودافون كاش|محفظه|والت)/.test(t)) { const c = live.find(a => a.type === 'WALLET'); if (c) return c.id; }
+  if (/(من البنك|الحساب البنكي|تحويل بنكي)/.test(t)) { const c = live.find(a => a.type === 'BANK'); if (c) return c.id; }
+  return null;
+}
+function parseExpenses(raw) {
+  let t = nrm(normDigits(raw)).replace(/(\d),(?=\d{3})/g, '$1').replace(/(\d)\s*(جنيه|جنيهات|ج|ج\.م|le|egp|pound)(?=\s|$)/g, '$1').replace(/[؟?!.]/g, ' ').replace(/\s+/g, ' ').trim();
+  t = wordsToDigits(t).replace(/(\d)([^\d\s.,])/g, '$1 $2').replace(/([^\d\s.,])(\d)/g, '$1 $2').replace(/\s+/g, ' ');
+  const income = INC_VERB.test(t) && !/(صرفت|دفعت|اشتريت)/.test(t);
+  let date = Date.now();
+  if (/(اول امبارح|اول امس)/.test(t)) date -= 2 * DAY; else if (/(امبارح|امس)/.test(t)) date -= DAY;
+  const gAcc = accOfWords(t);
+  // تقسيم لأجزاء: كل جزء فيه مبلغ واحد
+  const words = t.split(' ').filter(w => !/^(النهارده|انهارده|اليوم|امبارح|اول|امس|جنيه|جنيهات|بس|كمان|وكمان|برده|يعني|تقريبا|حوالي)$/.test(w));
+  const segs = []; let cur = []; const hasNum = a => a.some(w => /^\d/.test(w));
+  const verbWord = w => XVERB.test(w) || XVERB.test(w.replace(/^و/, ''));
+  for (let i = 0; i < words.length; i++) {
+    let w = words[i];
+    if (w === 'و' || w === '،' || w === ',' || w === '+' || w === 'و،') { if (hasNum(cur)) { segs.push(cur); cur = []; } continue; }
+    if (/^و./.test(w) && hasNum(cur) && (/^\d/.test(w.slice(1)) || catOfWords(w.slice(1), income) || verbWord(w))) { segs.push(cur); cur = []; w = w.slice(1); }
+    if (/^\d/.test(w) && hasNum(cur)) {
+      // البند قبل المبلغ («أكل 100 مواصلات 50»): الكلام اللي بعد المبلغ القديم بيروح للجزء الجديد
+      const ni = cur.findIndex(x => /^\d/.test(x)); const before = cur.slice(0, ni).filter(x => !verbWord(x) && !/^(ب|علي|على|في)$/.test(x));
+      if (before.length) { const carry = cur.slice(ni + 1); segs.push(cur.slice(0, ni + 1)); cur = carry; }
+      else { segs.push(cur); cur = []; }
+    }
+    cur.push(w);
+  }
+  if (cur.length) { if (hasNum(cur) || !segs.length) segs.push(cur); else segs[segs.length - 1].push(...cur); }
+  return segs.filter(hasNum).map(sw => {
+    const st = sw.join(' ');
+    const amount = parseFloat(sw.find(w => /^\d/.test(w)));
+    const words2 = sw.filter(w => !/^\d/.test(w) && !verbWord(w) && !/^(ب|بـ|علي|على|في|من|عند|ل|لل|ال|و)$/.test(w));
+    const mm = /(?:^|\s)(?:من|في|عند)\s+(.+)$/.exec(st);
+    let categoryId = catOfWords(st, income);
+    let merchant = mm ? mm[1].replace(/\d+(\.\d+)?/g, '').replace(/(ب?الكارت|ب?الفيزا|كاش|نقدي)/g, '').trim() : '';
+    if (!categoryId) { const guess = words2.join(' '); categoryId = suggestCategory(merchant || guess, income ? 'CREDIT' : 'DEBIT'); if (!merchant) merchant = guess; }
+    if (categoryId && merchant && [lbl((cat(categoryId) || {}).name || ''), ...(VOICE_SYN[(cat(categoryId) || {}).name] || [])].map(nrm).includes(nrm(merchant).replace(/^ال/, ''))) merchant = '';
+    if (!categoryId) categoryId = (catByName(income ? 'cat_other_inc' : 'cat_other_exp') || {}).id || null;
+    return { amount, type: income ? 'INCOME' : 'EXPENSE', categoryId, merchant: merchant.slice(0, 40), accountId: accOfWords(st) || gAcc, date };
+  }).filter(x => x.amount > 0);
+}
 function handleVoice(text) {
   const t = normDigits(text).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
   if (/(يومي العادي|زي العادي|زي كل يوم|نفس كل يوم|زي امبارح)/.test(t)) {
@@ -2731,14 +2822,22 @@ function handleVoice(text) {
   if (db.prefs.gmKey && (r.question || !(r.amount > 0))) return { reply: '...', ai: askAI(text) };
   if (r.question) { const d = document.createElement('div'); askNl(text, d); return { reply: d.textContent.replace('عرض', '').trim() || 'ماعرفتش أجاوب على ده' }; }
   if (!(r.amount > 0)) return { reply: 'مافهمتش. قول مثلاً: صرفت 200 أكل، أو فاضلي كام، أو قول «أوامر» تعرف أقدر أعمل إيه' };
-  const accountId = r.accountId || (db.accounts.find(a => !a.archived && a.type !== 'CREDIT') || db.accounts[0] || {}).id;
-  if (!accountId) return { reply: 'أضف حساب الأول' };
-  const id = newId();
-  db.txns.push({ id, type: r.type, amount: r.amount, accountId, categoryId: r.categoryId, merchant: r.merchant, note: 'بالصوت', date: Date.now(), source: 'VOICE' });
-  if (r.categoryId && r.merchant) learn(r.merchant, r.categoryId);
+  const items = parseExpenses(text);
+  if (!items.length) return { reply: 'مافهمتش المبلغ. قول مثلاً: صرفت 200 أكل و50 مواصلات' };
+  const def = (db.accounts.find(a => !a.archived && LIQUID.has(a.type)) || db.accounts.find(a => !a.archived) || {}).id;
+  if (!def) return { reply: 'أضف حساب الأول' };
+  const ids = []; const lines = [];
+  items.forEach(q => { const id = newId(); ids.push(id);
+    db.txns.push({ id, type: q.type, amount: q.amount, accountId: q.accountId || def, categoryId: q.categoryId, merchant: q.merchant, note: 'بالصوت', date: q.date, source: 'VOICE' });
+    if (q.categoryId && q.merchant) learn(q.merchant, q.categoryId);
+    const c = cat(q.categoryId); const ac = q.accountId && acc(q.accountId);
+    lines.push(`${r0(q.amount)} ${c ? lbl(c.name) : ''}${q.merchant ? ' (' + q.merchant + ')' : ''}${ac && q.accountId !== def ? ' من ' + lbl(ac.name) : ''}`.replace(/\s+/g, ' ').trim()); });
   save(); render();
-  const c = cat(r.categoryId);
-  return { reply: `سجّلت ${r.type === 'INCOME' ? 'دخل' : 'مصروف'} ${r.amount}${c ? ' على ' + lbl(c.name) : ''}${r.merchant ? ' من ' + r.merchant : ''}`, undoId: id };
+  const when = dayStart(items[0].date) < dayStart(Date.now()) ? (dayStart(items[0].date) < dayStart(Date.now()) - DAY ? ' (أول امبارح)' : ' (امبارح)') : '';
+  const kind = items[0].type === 'INCOME' ? 'دخل' : 'مصروف';
+  if (items.length === 1) return { reply: `سجّلت ${kind} ${lines[0]}${when}`, undoId: ids[0] };
+  const tot = items.reduce((s0, q) => s0 + q.amount, 0);
+  return { reply: `سجّلت ${items.length === 2 ? (kind === 'دخل' ? 'دخلين' : 'مصروفين') : items.length + ' ' + (kind === 'دخل' ? 'دخل' : 'مصاريف')} بإجمالي ${r0(tot)}${when}: ${lines.join('، ')}`, undoId: ids };
 }
 
 // المساعد الصغير العائم: زر مايك صغير، يسمع ويرد في فقاعة صغيرة
@@ -2749,8 +2848,8 @@ function voiceBubble(state, text, undoId, go) {
   if (go) $('#vbGo').onclick = () => { b.classList.add('hidden'); go.go(); };
   $('#vbX').onclick = () => { b.classList.add('hidden'); if (vRec) vRec.abort(); speechSynthesis && speechSynthesis.cancel(); };
   if (undoId) {
-    $('#vbUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== undoId); save(); render(); voiceBubble('اتلغت', ''); setTimeout(() => b.classList.add('hidden'), 1200); };
-    $('#vbEdit').onclick = () => { b.classList.add('hidden'); openTxn(db.txns.find(x => x.id === undoId)); };
+    $('#vbUndo').onclick = () => { const u = [].concat(undoId); db.txns = db.txns.filter(x => !u.includes(x.id)); save(); render(); voiceBubble('اتلغت', ''); setTimeout(() => b.classList.add('hidden'), 1200); };
+    $('#vbEdit').onclick = () => { b.classList.add('hidden'); if (Array.isArray(undoId)) setTab('txns'); else openTxn(db.txns.find(x => x.id === undoId)); };
   }
 }
 // الآيفون مش بيقفل المايك لوحده لما تسكت: بنقفله بعد 6 ثواني لو ماسمعناش حاجة، وبعد ثانيتين سكوت بعد الكلام، وأقصى حاجة 20 ثانية
@@ -2815,7 +2914,7 @@ function openVoice() {
       out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '') + (r.go ? `<button class="btn small primary" id="vOpen">افتح ${esc(r.goLabel)}</button>` : '');
       if (r.go) $('#vOpen').onclick = r.go;
       setTimeout(() => speak(r.reply), 250);
-      if (r.undoId) $('#vUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== r.undoId); save(); out.innerHTML = insH('alert', 'اتلغت'); };
+      if (r.undoId) $('#vUndo').onclick = () => { const u = [].concat(r.undoId); db.txns = db.txns.filter(x => !u.includes(x.id)); save(); out.innerHTML = insH('alert', 'اتلغت'); };
       $('#vText').value = '';
     };
     $('#vGo').onclick = run;
@@ -2857,9 +2956,9 @@ function openChat(listen) {
   const bubble = m => `<div class="msg ${m.me ? 'me' : 'bot'}" data-mid="${m.id}"><div class="bub">${esc(m.text)}${m.undo && !m.undone ? `<div><button class="btn small" data-cu="${m.id}">تراجع</button></div>` : ''}${chatGo.has(m.id) ? `<div><button class="btn small primary" data-cg="${m.id}">افتح ${esc(m.goLabel || '')}</button></div>` : ''}</div>
     ${m.me ? '' : `<button class="c-say" data-cy="${m.id}" aria-label="اسمع">${ic('speaker')}</button>`}</div>`;
   const draw = () => {
-    list.innerHTML = db.chat.length ? db.chat.map(bubble).join('') : `<div class="msg bot"><div class="bub">أهلاً 👋 أنا مساعدك المالي. اتكلم وقول مثلاً «صرفت 150 أكل» أو «فاضلي كام».</div></div>`;
+    list.innerHTML = db.chat.length ? db.chat.map(bubble).join('') : `<div class="msg bot"><div class="bub">أهلاً 👋 أنا مساعدك المالي. اتكلم وقول مثلاً «صرفت 100 أكل و50 مواصلات» أو «فاضلي كام».</div></div>`;
     list.scrollTop = list.scrollHeight;
-    list.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cu); db.txns = db.txns.filter(x => x.id !== m.undo); m.undone = true; save(); render(); add(false, 'اتلغت الحركة'); });
+    list.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cu); const u = [].concat(m.undo); db.txns = db.txns.filter(x => !u.includes(x.id)); m.undone = true; save(); render(); add(false, u.length > 1 ? `اتلغت ${u.length} حركات` : 'اتلغت الحركة'); });
     list.querySelectorAll('[data-cg]').forEach(b => b.onclick = () => { const f = chatGo.get(+b.dataset.cg); closeChat(); f && f(); });
     list.querySelectorAll('[data-cy]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cy); m && speakForce(m.text); });
   };
