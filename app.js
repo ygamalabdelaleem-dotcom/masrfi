@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '36';
+const APP_VERSION = '37';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2391,17 +2391,15 @@ function openVoicePicker() {
     <h3>أصوات الموبايل (من غير نت)</h3>
     <div class="list">${row('', 'تلقائي (مضمون)', 'أحسن صوت عربي على موبايلك', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>${bad.length ? `<button class="btn small" id="vBadReset" style="margin-top:6px">إظهار الأصوات المخفية (${bad.length})</button>` : ''}
     ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}
-    <details style="margin-top:16px" ${db.prefs.gmKey ? 'open' : ''}><summary><b>أصوات أونلاين أطبع (Gemini، محتاج مفتاح ونت)</b></summary>
-    <h3>أصوات Google Gemini (زي AI Studio)</h3>
-    <div class="list">${Object.entries(GM_VOICES).map(([k, n]) => `<div class="item"><button class="btn small" data-gmplay="${k}">${ic('speaker')}</button><div class="grow"><div>${n}</div><div class="muted">${db.prefs.gmKey ? 'Gemini · محتاج نت' : 'حط المفتاح تحت الأول'}</div></div>
-      <button class="chip ${gmOn() && db.prefs.gmVoice === k ? 'on' : ''}" data-gmpick="${k}">${gmOn() && db.prefs.gmVoice === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
-    <p class="muted">كل صوت بياخد 2-3 ثواني. المفتاح المجاني بيسمح بعدد قليل في الدقيقة، فلو جربت أصوات كتير ورا بعض وماشتغلش، استنى دقيقة وجرّب تاني.</p>
-    <details style="margin:8px 0 14px" ${db.prefs.gmKey ? '' : 'open'}><summary class="muted">مفتاح Gemini (مرة واحدة)</summary>
+    <h3 style="margin-top:16px">أصوات Google Gemini (محتاجة مفتاح ونت)</h3>
+    <div class="card" style="margin:8px 0 12px"><b>🔑 مفتاح Gemini API</b>
       <label class="f">API Key</label><input class="in" id="gmKey" value="${esc(db.prefs.gmKey || '')}" autocomplete="off" placeholder="AIza...">
       <button class="btn block" id="gmSave" style="margin-top:8px">حفظ المفتاح</button>
       <ol class="steps muted" style="margin-top:8px"><li>ادخل <b>aistudio.google.com</b> بحساب جوجل</li><li>اضغط <b>Get API key</b> ← <b>Create API key</b></li><li>انسخ المفتاح والصقه هنا</li></ol>
-      <p class="muted">مجاني في حدود معينة في اليوم. جملة الرد بس اللي بتتبعت لجوجل عشان تتقري، وباقي بياناتك على موبايلك.</p></details>
-    </details>
+      <p class="muted">مجاني في حدود معينة في اليوم. جملة الرد بس اللي بتتبعت لجوجل عشان تتقري، وباقي بياناتك على موبايلك.</p></div>
+    <div class="list">${Object.entries(GM_VOICES).map(([k, n]) => `<div class="item"><button class="btn small" data-gmplay="${k}">${ic('speaker')}</button><div class="grow"><div>${n}</div><div class="muted">${db.prefs.gmKey ? 'Gemini · محتاج نت' : 'حط المفتاح فوق الأول'}</div></div>
+      <button class="chip ${gmOn() && db.prefs.gmVoice === k ? 'on' : ''}" data-gmpick="${k}">${gmOn() && db.prefs.gmVoice === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
+    <p class="muted">كل صوت بياخد 2-3 ثواني. المفتاح المجاني بيسمح بعدد قليل في الدقيقة، فلو جربت أصوات كتير ورا بعض وماشتغلش، استنى دقيقة وجرّب تاني.</p>
 `, () => {
     if ($('#vBadReset')) $('#vBadReset').onclick = () => { db.prefs.badVoices = []; save(); openVoicePicker(); };
     document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak.dev = true; speak(VOICE_SAMPLE); speak.only = null; speak.dev = false; });
