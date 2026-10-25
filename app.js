@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '25';
+const APP_VERSION = '26';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -834,6 +834,7 @@ function renderCards() {
       </div>`;
     }).join('') : '<div class="card empty">لا توجد خطط تقسيط. اضغط «تقسيط جديد» من البطاقة أو من هنا.</div>'}
     <div class="btns"><button class="btn primary" id="plImg">📷 تقسيط من صورة البنك</button><button class="btn" id="plNew">＋ خطة تقسيط</button></div>
+    <button class="btn block" id="plCode" style="margin-top:8px">📋 لصق كود تقسيط</button>
     <p class="muted">تقدر تختار كذا صورة مرة واحدة، وكل صورة بتتحوّل لتقسيط. لو التقسيط موجود بيتحدّث بس.</p>`;
   view().querySelectorAll('[data-pay]').forEach(b => b.onclick = () => {
     const a = acc(+b.dataset.pay); const owed = Math.max(0, -(balances()[a.id] || 0));
@@ -846,6 +847,7 @@ function renderCards() {
   $('#ccNew').onclick = () => editAccount(null, true);
   $('#plNew').onclick = () => editPlan();
   $('#plImg').onclick = () => addPlansFromImages();
+  $('#plCode').onclick = () => { const c = prompt('الصق كود التقسيط هنا'); if (!c) return; const r = importPlanCode(c); toast(r.added || r.updated ? `اتضاف ${r.added} تقسيط${r.updated ? ` واتحدّث ${r.updated}` : ''}` : 'الكود مش صحيح'); renderCards(); };
 }
 
 // ===== قراءة صورة شاشة التقسيط من تطبيق البنك (OCR على الجهاز بـ Tesseract) =====
@@ -905,6 +907,36 @@ function addPlansFromImages(cardId) {
     if (partial.length) { const x = partial[0]; toast('مقدرتش أقرا كل الخانات، كمّلها بإيدك'); editPlanBank(Object.assign(planFromBank({ ...x, months: x.months || 12, remaining: x.remaining ?? 12, end: x.end || Date.now() }, cardId), { id: 0, name: x.name || '' }), cardId, true); }
   };
   inp.click();
+}
+// كود تقسيط جاهز (من الشات أو لينك): أصل_القسط_الفائدة الشهرية_تاريخ الانتهاء_الباقي_الشهور~...
+function importPlanCode(code) {
+  let items = String(code || '').replace(/^.*?plans=/, '').trim().split(/[~\n;]+/).map(x => x.trim()).filter(Boolean);
+  let card = (db.accounts.find(a => a.type === 'CREDIT' && !a.archived) || {}).id;
+  // بيانات البطاقة: card_الاسم_آخر4_الحد_يوم السداد_المستحق (غير الأقساط)
+  const cs = items.find(x => /^card_/.test(x));
+  if (cs) {
+    items = items.filter(x => x !== cs);
+    const [, nm, last4, lim, due, owed] = cs.split('_');
+    let a = db.accounts.find(x => x.type === 'CREDIT' && x.last4 === last4) || db.accounts.find(x => x.type === 'CREDIT' && !x.last4 && !x.archived);
+    if (!a) { a = { id: newId(), type: 'CREDIT', currency: 'EGP', archived: false }; db.accounts.push(a); }
+    // الرصيد الافتتاحي بحيث رصيد البطاقة يبقى = المستحق دلوقتي بعد الحركات المسجلة عليها
+    const txSum = (balances()[a.id] || 0) - (+a.initialBalance || 0);
+    Object.assign(a, { name: decodeURIComponent(nm), last4, creditLimit: +lim, dueDay: +due, initialBalance: -(+owed) - txSum });
+    card = a.id;
+  }
+  if (!card && items.length) { card = newId(); db.accounts.push({ id: card, name: 'بطاقة ائتمان', type: 'CREDIT', currency: 'EGP', initialBalance: 0, last4: '', archived: false }); }
+  let added = 0, updated = 0;
+  items.forEach(it => {
+    const [P, mf, rate, end, rem, months, ...nm] = it.split('_');
+    const d = new Date(end + 'T09:00').getTime();
+    const x = { principal: +P, monthlyFixed: +mf, mRate: +rate, end: d, remaining: +rem, months: +months, name: decodeURIComponent(nm.join('_') || 'Balance Conversion Debit') };
+    if (!(x.principal > 0 && x.monthlyFixed > 0 && isFinite(d) && x.months > 0)) return;
+    const old = db.installments.find(p => Math.abs(p.principal - x.principal) < 0.01);
+    const np = planFromBank(x, card);
+    if (old) { Object.assign(old, np, { id: old.id }); updated++; } else { db.installments.push(np); added++; }
+  });
+  save(); runInstallments();
+  return { added, updated };
 }
 // إدخال التقسيط بنفس خانات شاشة البنك (Transaction details)
 function editPlanBank(p, cardId, prefilled) {
@@ -2968,6 +3000,8 @@ darkMq.addEventListener && darkMq.addEventListener('change', applyTheme);
 applyTheme();
 // استقبال رسالة من اختصار iOS عبر الرابط: ...#sms=<نص الرسالة>
 function handleHash() {
+  const pm = /[#&]plans=([^&]*)/.exec(location.hash);
+  if (pm) { history.replaceState(null, '', location.pathname); const r = importPlanCode(decodeURIComponent(pm[1])); toast(`اتضاف ${r.added} تقسيط${r.updated ? ` واتحدّث ${r.updated}` : ''}`); setTab('cards'); return; }
   const m = /[#&]sms=([^&]*)/.exec(location.hash);
   if (!m) return;
   history.replaceState(null, '', location.pathname);
