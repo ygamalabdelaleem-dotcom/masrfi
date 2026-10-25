@@ -942,7 +942,10 @@ function icsFor(time) {
 function openSettings() {
   const notifOk = 'Notification' in window;
   sheet('الإعدادات', `
-    <h3>⏰ التذكير اليومي</h3>
+    <h3>🌓 المظهر</h3>
+    <div class="seg" id="stTheme">${[['auto', 'تلقائي'], ['light', '☀️ فاتح'], ['dark', '🌙 داكن']].map(([k, v]) => `<button data-th="${k}" class="${(db.prefs.theme || 'auto') === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
+    <h3 style="margin-top:16px">⏰ التذكير اليومي</h3>
     <label class="f">وقت التذكير</label><input class="in" type="time" id="stTime" value="${db.prefs.reminderTime || '21:00'}">
     <button class="btn primary block" id="stIcs" style="margin-top:10px">📅 إضافة التذكير اليومي للتقويم</button>
     <p class="muted">هيظهر لك تنبيه كل يوم في الوقت ده على الآيفون <b>وعلى ساعة أبل</b> كمان. اضغط «Add All» لما يظهر لك التقويم.</p>
@@ -958,6 +961,7 @@ function openSettings() {
       <div class="item" id="stPin"><div class="ico">🔒</div><div class="grow">قفل PIN</div><span class="muted">${db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل'} ‹</span></div>
       <div class="item" id="stBackup"><div class="ico">💾</div><div class="grow">نسخ احتياطي واستعادة</div><span class="muted">‹</span></div>
     </div>`, () => {
+    document.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setTheme(b.dataset.th); document.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
     $('#stTime').onchange = e => { db.prefs.reminderTime = e.target.value; save(); };
     $('#stIcs').onclick = () => {
       db.prefs.reminderTime = $('#stTime').value || '21:00'; save();
@@ -1024,7 +1028,7 @@ function openTxn(t, preset) {
       save(); closeSheet(); toast('تم الحفظ');
     };
     if (!isNew) $('#tDel').onclick = () => { if (confirm('حذف هذه الحركة؟')) { db.txns = db.txns.filter(x => x.id !== t.id); save(); closeSheet(); } };
-    if (isNew && !t.amount) setTimeout(() => $('#tAmt').focus(), 250);
+    if (isNew && !t.amount) setTimeout(() => { const el = $('#tAmt'); if (el) el.focus(); }, 250);
   });
   function readForm() {
     t.amount = $('#tAmt').value; t.accountId = +$('#tAcc').value; t.merchant = $('#tMer').value; t.note = $('#tNote').value;
@@ -1476,6 +1480,19 @@ document.querySelector('.sheet-bg').onclick = closeSheet;
 $('#pinGo').onclick = tryUnlock;
 $('#pinIn').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
 $('#settingsBtn').onclick = openSettings;
+// الوضع الفاتح / الداكن: auto يتبع إعداد الآيفون
+const darkMq = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => db.prefs.theme === 'dark' || (db.prefs.theme !== 'light' && darkMq.matches);
+function applyTheme() {
+  const t = db.prefs.theme;
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  $('#themeBtn').textContent = isDark() ? '☀️' : '🌙';
+  document.querySelector('meta[name=theme-color]').content = isDark() ? '#0c111d' : '#0e7c6b';
+}
+function setTheme(t) { db.prefs.theme = t; save(); applyTheme(); }
+$('#themeBtn').onclick = () => setTheme(isDark() ? 'light' : 'dark');
+darkMq.addEventListener && darkMq.addEventListener('change', applyTheme);
+applyTheme();
 // استقبال رسالة من اختصار iOS عبر الرابط: ...#sms=<نص الرسالة>
 function handleHash() {
   const m = /[#&]sms=([^&]*)/.exec(location.hash);
