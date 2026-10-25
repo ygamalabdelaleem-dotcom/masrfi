@@ -392,3 +392,4 @@ svg.i.inl { display: inline-block; width: 16px; height: 16px; vertical-align: -3
 .c-mic svg.i { width: 34px; height: 34px; }
 .chat-voice .muted { font-size: 13px; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 16px #e5393522; } }
+body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat { filter: blur(18px); }

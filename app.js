@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '45';
+const APP_VERSION = '46';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -695,7 +695,7 @@ function renderMore() {
       ['currency', 'العملة وأسعار الصرف والذهب', `العملة الأساسية: ${base()}`, openRates],
       ['save', 'نسخ احتياطي واستعادة', 'حفظ بياناتك في ملف (iCloud Drive أو الملفات)', openBackup],
       ['upload', 'تصدير الحركات (Excel/CSV)', 'كل الحركات في ملف واحد', exportCsv],
-      ['lock', 'قفل PIN', db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل', openPin],
+      ['lock', 'حماية بياناتي', `القفل، Face ID، النسخ المشفّر${backupAge() == null || backupAge() > 7 ? ' · ⚠️ اعمل نسخة' : ''}`, openSecurity],
       ['install', 'التثبيت على الآيفون', 'إضافة التطبيق للشاشة الرئيسية', () => $('#iosHint').classList.remove('hidden')]]]
   ];
   const items = groups.flatMap(g => g[1]);
@@ -1276,7 +1276,7 @@ function openSettings() {
     <h3 style="margin-top:16px">أخرى</h3>
     <div class="list menu">
       <div class="item" id="stRates"><div class="ico">💱</div><div class="grow">العملة وأسعار الصرف</div><span class="muted">${base()} ‹</span></div>
-      <div class="item" id="stPin"><div class="ico">🔒</div><div class="grow">قفل PIN</div><span class="muted">${db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل'} ‹</span></div>
+      <div class="item" id="stPin"><div class="ico">🛡️</div><div class="grow">حماية بياناتي</div><span class="muted">${db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل'} ‹</span></div>
       <div class="item" id="stBackup"><div class="ico">💾</div><div class="grow">نسخ احتياطي واستعادة</div><span class="muted">‹</span></div>
     </div>`, () => {
     document.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setTheme(b.dataset.th); document.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
@@ -1289,7 +1289,7 @@ function openSettings() {
     document.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => { db.prefs.voiceRate = +b.dataset.vr; save(); document.querySelectorAll('[data-vr]').forEach(x => x.classList.toggle('on', x === b)); speak('ده صوتي بالسرعة دي'); });
     $('#stVoiceTest').onclick = () => speakForce('صرفت النهارده 250 جنيه، وفاضلك 1500 لحد القبض');
     $('#stVoiceDiag').onclick = () => voiceDiag($('#vDiag'));
-    $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
+    $('#stRates').onclick = openRates; $('#stPin').onclick = openSecurity; $('#stBackup').onclick = openBackup;
   });
 }
 
@@ -1902,6 +1902,7 @@ const NOTIFS = [
   { id: 'payday', i: '💰', t: 'يوم القبض', d: 'تفكير بتوزيع المرتب وتحويل الادخار' },
   { id: 'goal', i: '🎯', t: 'أهداف الادخار', d: 'لما توصل لهدف أو تقرب منه' },
   { id: 'weekly', i: '🗓️', t: 'ملخص الأسبوع', d: 'صرفت كام الأسبوع ده مقارنة بالمسموح', set: { k: 'day', def: 5, l: 'اليوم' } },
+  { id: 'backup', i: '💾', t: 'تذكير النسخة الاحتياطية', d: 'لو بقالك مدة ماعملتش نسخة (المدة من «حماية بياناتي»)' },
   { id: 'monthly', i: '📑', t: 'ملخص الشهر', d: 'أول يوم في الشهر: دخل ومصروف وادخار الشهر اللي فات' },
 ];
 const WDAYS = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
@@ -1962,6 +1963,8 @@ function dueNotifs(now = Date.now()) {
   if (on('weekly') && d.getDay() === +v('weekly') && d.getHours() >= 18) {
     const wk = db.txns.filter(t => t.type === 'EXPENSE' && t.date >= t0 - 6 * DAY).reduce((s0, t) => s0 + conv(t.amount, txCur(t)), 0);
     add('weekly', today, '🗓️ ملخص الأسبوع', `صرفت ${n0(wk)} آخر 7 أيام${cp ? `، والمسموح ليك حوالي ${n0(cp.safeDaily * 7)} في الأسبوع` : ''}.`, 'reports'); }
+  if (on('backup') && (db.prefs.backupEvery ?? 7) > 0 && db.txns.length >= 5) { const ag = backupAge();
+    if (ag == null || ag >= (db.prefs.backupEvery ?? 7)) add('backup', today.slice(0, 8) + Math.floor(d.getDate() / 7), '💾 اعمل نسخة احتياطية', ag == null ? 'بياناتك على موبايلك بس. اعمل نسخة مشفّرة واحفظها في iCloud عشان ماتضيعش.' : `آخر نسخة من ${daysAr(ag)}. اعمل نسخة جديدة دلوقتي.`, 'more'); }
   if (on('monthly') && d.getDate() === 1) { const [f, t] = monthRange(-1); const [inc, exp] = typeTotals(inRange(f, t));
     add('monthly', fmtDate(f), '📑 ملخص الشهر اللي فات', `دخل ${n0(inc)}، مصروف ${n0(exp)}${inc ? `، ادخرت ${Math.round((inc - exp) / inc * 100)}%` : ''}.`, 'ctrl'); }
   return out;
@@ -3303,19 +3306,27 @@ async function deriveKey(pass, salt) {
 function openBackup() {
   sheet('نسخ احتياطي واستعادة', `
     <p class="muted">احفظ الملف في «الملفات» أو iCloud Drive. يمكنك أيضاً استعادة نسخة من تطبيق الأندرويد إذا صدّرت الحركات كـ CSV.</p>
-    <label class="f">كلمة مرور للتشفير (اختيارية)</label><input class="in" id="bPass" type="password" autocomplete="new-password">
+    ${backupAge() != null ? `<p class="muted">آخر نسخة: ${backupAge() === 0 ? 'النهارده' : `من ${daysAr(backupAge())}`}</p>` : ''}
+    <label class="f">كلمة سر للتشفير 🔒</label><input class="in" id="bPass" type="password" autocomplete="new-password" placeholder="اختار كلمة سر وافتكرها">
+    <label class="f">تأكيد كلمة السر</label><input class="in" id="bPass2" type="password" autocomplete="new-password">
+    <label class="row muted" style="margin-top:6px"><input type="checkbox" id="bPlain"> من غير تشفير (مش مستحسن)</label>
     <button class="btn primary block" id="bSave" style="margin-top:10px">💾 إنشاء نسخة احتياطية</button>
     <label class="f" style="margin-top:16px">استعادة من ملف</label><input class="in" id="bFile" type="file" accept=".json,.mwb,application/json">
     <label class="f" style="margin-top:16px">استيراد حركات من CSV (التاريخ، النوع، المبلغ، الحساب، التصنيف، التاجر، ملاحظة)</label><input class="in" id="bCsv" type="file" accept=".csv,text/csv">
     <button class="btn danger block" id="bWipe" style="margin-top:16px">مسح كل البيانات</button>`, () => {
     $('#bSave').onclick = async () => {
-      const pass = $('#bPass').value; let payload = JSON.stringify(db), name = `mywallet-backup-${fmtDate(Date.now())}.json`;
+      const pass = $('#bPass').value;
+      if (!pass && !$('#bPlain').checked) return toast('اكتب كلمة سر للتشفير، أو علّم على «من غير تشفير»');
+      if (pass && pass !== $('#bPass2').value) return toast('كلمتين السر مش زي بعض');
+      const clean = { ...db, prefs: { ...db.prefs } }; SECRET_PREFS.forEach(k => delete clean.prefs[k]); delete clean.chat;
+      let payload = JSON.stringify(clean), name = `mywallet-backup-${fmtDate(Date.now())}.json`;
       if (pass) {
         const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
         const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await deriveKey(pass, salt), enc.encode(payload));
         payload = JSON.stringify({ mywalletEncrypted: 1, salt: b64(salt), iv: b64(iv), data: b64(ct) });
       }
       shareOrDownload(name, new Blob([payload], { type: 'application/json' }));
+      db.prefs.lastBackup = Date.now(); save(); toast(pass ? 'اتعملت نسخة مشفّرة 🔒' : 'اتعملت النسخة');
     };
     $('#bFile').onchange = async e => {
       const f = e.target.files[0]; if (!f) return;
@@ -3328,7 +3339,8 @@ function openBackup() {
         }
         if (!o.accounts || !o.txns) throw new Error('bad');
         if (!confirm('سيتم استبدال كل البيانات الحالية بالنسخة. متابعة؟')) return;
-        db = migrate(o); save(); closeSheet(); toast('تمت الاستعادة');
+        const keep = {}; SECRET_PREFS.forEach(k => { if (db.prefs[k]) keep[k] = db.prefs[k]; });
+        db = migrate(o); Object.assign(db.prefs, keep); save(); closeSheet(); toast('تمت الاستعادة');
       } catch (err) { toast('تعذّرت الاستعادة: الملف أو كلمة المرور غير صحيحة'); }
     };
     $('#bCsv').onchange = async e => { const f = e.target.files[0]; if (f) importCsv(await f.text()); };
@@ -3378,6 +3390,45 @@ function importCsv(text) {
   });
   save(); closeSheet(); toast(`تم استيراد ${added} حركة، وتخطي ${skipped}`);
 }
+
+// ================= حماية بياناتي =================
+const SECRET_PREFS = ['gmKey', 'azKey', 'azRegion', 'pinHash', 'bioCred'];
+const backupAge = () => db.prefs.lastBackup ? Math.floor((Date.now() - db.prefs.lastBackup) / DAY) : null;
+async function openSecurity() {
+  const bio = await bioSupported();
+  let persisted = null; try { persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null; } catch (e) { }
+  const age = backupAge(); const la = db.prefs.lockAfter ?? 60;
+  const row = (ok, t, d) => `<div class="item"><div class="ico">${ok ? '✅' : '⚠️'}</div><div class="grow"><b>${t}</b><div class="muted">${d}</div></div></div>`;
+  const score = [!!db.prefs.pinHash, !!db.prefs.bioCred || !bio, age != null && age <= 7, persisted !== false].filter(Boolean).length;
+  sheet('حماية بياناتي', `
+    <div class="insight ${score === 4 ? '' : 'w'}"><div class="grow"><b>${score === 4 ? '🛡️ بياناتك محمية' : `🛡️ الحماية ${score} من 4`}</b><br>بياناتك متخزنة على موبايلك بس، مش على أي سيرفر. خلّي عندك قفل ونسخة احتياطية مشفّرة.</div></div>
+    <div class="list">
+      ${row(!!db.prefs.pinHash, 'قفل التطبيق', db.prefs.pinHash ? 'الرمز مفعّل' : 'مفيش قفل، أي حد ماسك موبايلك يشوف حساباتك')}
+      ${bio ? row(!!db.prefs.bioCred, 'Face ID', db.prefs.bioCred ? 'مفعّل' : 'مش مفعّل') : ''}
+      ${row(age != null && age <= 7, 'النسخة الاحتياطية', age == null ? 'ماعملتش نسخة قبل كده. لو مسحت Safari أو غيرت الموبايل هتضيع بياناتك' : age === 0 ? 'اتعملت النهارده' : `آخر نسخة من ${daysAr(age)}`)}
+      ${row(persisted !== false, 'تخزين دائم', persisted ? 'الآيفون مش هيمسح بياناتك لوحده' : 'ضيف التطبيق للشاشة الرئيسية عشان الآيفون مايمسحش البيانات')}
+    </div>
+    <div class="btns" style="margin-top:10px"><button class="btn primary" id="sPin">${ic('lock')} ${db.prefs.pinHash ? 'القفل و Face ID' : 'فعّل القفل'}</button><button class="btn primary" id="sBak">💾 نسخة مشفّرة</button></div>
+    <h3 style="margin-top:16px">القفل التلقائي</h3>
+    <div class="chips">${[[0, 'فوراً'], [60, 'بعد دقيقة'], [300, 'بعد 5 دقايق'], [900, 'بعد ربع ساعة']].map(([v, t]) => `<button class="chip ${la === v ? 'on' : ''}" data-la="${v}">${t}</button>`).join('')}</div>
+    <p class="muted">التطبيق يتقفل لما تخرج منه أو تسيبه مفتوح من غير ما تلمسه المدة دي.</p>
+    <h3 style="margin-top:16px">الخصوصية</h3>
+    <label class="row"><input type="checkbox" id="sHide" ${db.prefs.hideBal ? 'checked' : ''}> إخفاء المبالغ في الرئيسية والمتحكم (اضغط 👁 تظهرها)</label>
+    <label class="row" style="margin-top:8px"><input type="checkbox" id="sBlur" ${db.prefs.blurBg !== false ? 'checked' : ''}> تغبيش الشاشة لما تقلّب بين التطبيقات</label>
+    <h3 style="margin-top:16px">تذكير النسخ الاحتياطي</h3>
+    <div class="chips">${[[7, 'كل أسبوع'], [14, 'كل أسبوعين'], [30, 'كل شهر'], [0, 'لأ']].map(([v, t]) => `<button class="chip ${(db.prefs.backupEvery ?? 7) === v ? 'on' : ''}" data-be="${v}">${t}</button>`).join('')}</div>
+    <p class="muted">النسخة بتتشفّر بكلمة سر (AES-256)، ومفتاح Gemini ورمز القفل مش بيتحطوا فيها. احفظها في iCloud Drive أو «الملفات».</p>`, () => {
+    $('#sPin').onclick = openPin; $('#sBak').onclick = openBackup;
+    document.querySelectorAll('[data-la]').forEach(b => b.onclick = () => { db.prefs.lockAfter = +b.dataset.la; save(); openSecurity(); });
+    document.querySelectorAll('[data-be]').forEach(b => b.onclick = () => { db.prefs.backupEvery = +b.dataset.be; save(); openSecurity(); });
+    $('#sHide').onchange = e => { db.prefs.hideBal = e.target.checked; save(); };
+    $('#sBlur').onchange = e => { db.prefs.blurBg = e.target.checked; save(); };
+  });
+}
+// قفل لو التطبيق اتساب مفتوح من غير لمس
+let lastTouch = Date.now();
+['touchstart', 'click', 'keydown', 'scroll'].forEach(ev => document.addEventListener(ev, () => { lastTouch = Date.now(); }, { capture: true, passive: true }));
+setInterval(() => { const la = db.prefs.lockAfter ?? 60; if (db.prefs.pinHash && $('#lock').classList.contains('hidden') && Date.now() - lastTouch > Math.max(60, la || 60) * 1000 * (la ? 1 : 3)) showLock(); }, 15000);
 
 // ================= قفل PIN =================
 async function hashPin(pin) { return b64(await crypto.subtle.digest('SHA-256', enc.encode('mywallet:' + pin))); }
@@ -3482,8 +3533,8 @@ window.addEventListener('hashchange', handleHash);
 $('#iosHintClose').onclick =() => { $('#iosHint').classList.add('hidden'); try { localStorage.setItem('mywallet.hint', '1'); } catch (e) { } };
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) hiddenAt = Date.now();
-  else { if (hiddenAt && Date.now() - hiddenAt > 60000) showLock(); runRecurring(); runInstallments(); if ($('#sheet').classList.contains('hidden')) render(); }
+  if (document.hidden) { hiddenAt = Date.now(); if (db.prefs.blurBg !== false && db.prefs.pinHash) document.body.classList.add('privacy'); }
+  else { document.body.classList.remove('privacy'); if (hiddenAt && Date.now() - hiddenAt >= (db.prefs.lockAfter ?? 60) * 1000) showLock(); runRecurring(); runInstallments(); if ($('#sheet').classList.contains('hidden')) render(); }
 });
 
 const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
