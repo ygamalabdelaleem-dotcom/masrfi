@@ -432,7 +432,7 @@ function txRow(t) {
   if (t.type === 'TRANSFER') { icon = ic('transfer'); cls = ''; sign = ''; title = t.merchant || `تحويل إلى ${lbl((acc(t.toAccountId) || {}).name || '')}`; }
   return `<div class="item" data-tx="${t.id}">
     <div class="ico">${icon}</div>
-    <div class="grow"><div class="ellipsis">${esc(title)}</div><div class="muted ellipsis">${esc(lbl(a ? a.name : ''))} · ${ltr(fmtDT(t.date))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
+    <div class="grow"><div class="ellipsis">${esc(title)}</div><div class="muted ellipsis">${t.source === 'ESTIMATE' ? '<span class="pill">تقديري</span> ' : ''}${esc(lbl(a ? a.name : ''))} · ${ltr(fmtDT(t.date))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
     <div class="num ${cls}">${sign}${money(t.amount)} <small class="muted">${cur}</small></div>
   </div>`;
 }
@@ -478,7 +478,7 @@ function renderHome() {
   const pending = db.inbox.filter(m => m.status === 'PENDING').length;
   const todayStart = new Date().setHours(0, 0, 0, 0);
   const [rh, rm] = (db.prefs.reminderTime || '21:00').split(':').map(Number);
-  const showReminder = db.prefs.reminderTime && new Date().getHours() * 60 + new Date().getMinutes() >= rh * 60 + rm && !db.txns.some(t => t.date >= todayStart);
+  const showReminder = db.prefs.reminderTime && new Date().getHours() * 60 + new Date().getMinutes() >= rh * 60 + rm && !db.txns.some(t => t.date >= todayStart) && !noSpend().includes(dayKey(Date.now()));
 
   const recent = [...db.txns].sort((a, b) => b.date - a.date).slice(0, 6);
   const budgets = db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome);
@@ -507,7 +507,8 @@ function renderHome() {
     </section>
     <div class="card tiles">${tiles.map(([k, i, t, b]) => `<button data-q="${k}"><span class="ti">${ic(i)}</span><span>${t}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</div>
     ${riskCard(hide)}
-    ${showReminder ? `<div class="card reminder"><div class="row"><span class="ib warn">${ic('bell')}</span><div class="grow"><b>ماسجّلتش مصاريف النهارده</b><div class="muted">سجّلها دلوقتي عشان تفضل حساباتك مظبوطة</div></div><button class="btn small primary" id="hRem">إضافة</button></div></div>` : ''}
+    ${usualCard()}
+    ${showReminder ? `<div class="card reminder"><div class="row"><span class="ib warn">${ic('bell')}</span><div class="grow"><b>ماسجّلتش مصاريف النهارده</b><div class="muted">سجّلها دلوقتي عشان تفضل حساباتك مظبوطة</div></div><button class="btn small primary" id="hRem">إضافة</button></div>${usualDay().total ? `<div class="btns"><button class="btn small" id="hUsual">سجّل يومي العادي (≈ ${money(usualDay().total).replace(/\.00$/, '')})</button><button class="btn small" id="hNone">ماصرفتش حاجة</button></div>` : ''}</div>` : ''}
     <div class="card">
       <div class="row between"><h3>ملخص الشهر</h3><span class="muted">${new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</span></div>
       <div class="sum3">
@@ -536,6 +537,9 @@ function renderHome() {
   $('#hAcc').onclick = openAccounts;
   $('#hAll').onclick = () => setTab('txns');
   if ($('#hRem')) $('#hRem').onclick = () => openTxn();
+  if ($('#hUsual')) $('#hUsual').onclick = () => { const r = fillUsual([Date.now()]); toast(`اتسجّل ${money(r.total)} تقديري`); render(); };
+  if ($('#hNone')) $('#hNone').onclick = () => { noSpend().push(dayKey(Date.now())); save(); render(); };
+  bindUsualCard();
   const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), tr: () => openTxn(null, { type: 'TRANSFER' }), sms: () => setTab('inbox'),
     cards: () => setTab('cards'), savings: () => setTab('savings'), ctrl: () => setTab('ctrl'), voice: openVoice };
   view().querySelectorAll('[data-cat]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.cat, period: 'MONTH' }; setTab('txns'); });
@@ -1202,7 +1206,7 @@ function cashPlan() {
   const H = cyc.left + 30;
   const end = t0 + (H + 1) * DAY - 1;
   const bal = balances();
-  const liquid = db.accounts.filter(a => !a.archived && LIQUID.has(a.type)).reduce((s, a) => s + conv(bal[a.id] || 0, a.currency), 0);
+  let liquid = db.accounts.filter(a => !a.archived && LIQUID.has(a.type)).reduce((s, a) => s + conv(bal[a.id] || 0, a.currency), 0);
   const ev = [];
   const idx = d => Math.max(0, Math.round((dayStart(d) - t0) / DAY));
   const add = (d, amt, label, kind) => { const i = idx(d); if (i <= H && amt) ev.push({ i, date: d, amt, label, kind }); };
@@ -1228,11 +1232,15 @@ function cashPlan() {
   // المصروف المتغير اليومي: متوسط آخر 30 يوم، أو تقدير من المرتب لو مفيش تاريخ كفاية
   const hist = db.txns.filter(t => t.type === 'EXPENSE' && t.date >= t0 - 30 * DAY && t.date < t0);
   const firstTx = db.txns.reduce((m, t) => Math.min(m, t.date), now);
-  const histDays = Math.min(30, Math.max(1, Math.round((t0 - dayStart(firstTx)) / DAY)));
+  // المتوسط على الأيام اللي اتسجلت بس، عشان الأيام المنسية ماتقللش المتوسط
+  const histDays = Math.max(1, Math.min(Math.min(30, Math.round((t0 - dayStart(firstTx)) / DAY)), loggedDays(t0 - 30 * DAY, t0 - 1).size || 1));
   let varDaily = hist.filter(t => !isFixedTxn(t)).reduce((s, t) => s + conv(t.amount, txCur(t)), 0) / histDays;
   const estimated = histDays < 10 && p.salary > 0;
   if (estimated) varDaily = Math.max(varDaily, Math.max(0, p.salary * (1 - (db.prefs.savingRate || 20) / 100) - fixedMonthly()) / 30.44);
   const todayVar = db.txns.filter(t => t.type === 'EXPENSE' && t.date >= t0 && !isFixedTxn(t)).reduce((s, t) => s + conv(t.amount, txCur(t)), 0);
+  // الأيام اللي ماتسجلتش: صرفها المتوقع بيتخصم من الرصيد عشان مايبانش أعلى من الحقيقة
+  const unlogged = missedDays().reduce((s, d) => s + usualDay(d).total, 0);
+  liquid -= unlogged;
   const series = []; let b = liquid;
   for (let i = 0; i <= H; i++) {
     ev.filter(e => e.i === i).forEach(e => { b += e.amt; });
@@ -1258,7 +1266,7 @@ function cashPlan() {
   let level = 'ok';
   if (free < 0 || (zeroDay >= 0 && zeroDay < L)) level = 'danger';
   else if (low.v < cushion || safeDaily < varDaily * 0.8) level = 'warn';
-  return { liquid, cyc, H, ev: ev.sort((a, b) => a.i - b.i), series, varDaily, estimated, todayVar, fixedDue, inflowDue, cushion, saveLeft, free, safeDaily, zeroDay, low, low7, atPay, runway, level, t0 };
+  return { liquid, cyc, H, ev: ev.sort((a, b) => a.i - b.i), series, varDaily, estimated, todayVar, fixedDue, inflowDue, cushion, saveLeft, unlogged, free, safeDaily, zeroDay, low, low7, atPay, runway, level, t0 };
 }
 
 // تنبيهات السيولة: يومي، أسبوعي، شهري
@@ -1370,6 +1378,7 @@ function renderCtrl() {
         <div class="stat"><span class="muted">ثابت لحد القبض</span><b class="num exp">${m(cp.fixedDue)}</b></div>
         <div class="stat"><span class="muted">حد الأمان</span><b class="num">${m(cp.cushion)}</b></div>
       </div>
+      ${cp.unlogged > 0 ? `<p class="muted">اتخصم <b class="num">${m(cp.unlogged)}</b> تقدير للأيام اللي ماسجّلتش فيها. سجّلها من الرئيسية عشان الحساب يبقى أدق.</p>` : ''}
       ${cp.saveLeft > 0 ? `<p class="muted">محجوز <b class="num">${m(cp.saveLeft)}</b> ادخار الشهر ده لسه ماتحوّلش لحساب التوفير، ومش داخل في المسموح اليومي.</p>` : ''}
     </div>
     ${up.length ? `<div class="card"><h3>الجاي لحد القبض</h3><div class="list">${up.map(e => `<div class="item"><div class="ico">${e.amt > 0 ? '⬇️' : '📌'}</div><div class="grow"><div class="ellipsis">${esc(e.label)}</div><div class="muted">${e.n > 1 ? `${e.n} مرات من ${ltr(fmtDate(e.date))}` : ltr(fmtDate(e.date))}</div></div><div class="num ${e.amt > 0 ? 'inc' : 'exp'}">${money(Math.abs(e.amt))}</div></div>`).join('')}</div></div>` : ''}
@@ -1592,6 +1601,86 @@ async function checkRiskNotify() {
   try { const reg = await navigator.serviceWorker.getRegistration(); reg.showNotification('محفظتي: خطر سيولة', { body: a.text.replace(/<[^>]+>/g, ''), icon: 'icons/icon-192.png', tag: 'risk' }); } catch (e) { }
 }
 
+// ================= يومك العادي =================
+// بيتعلم صرفك اليومي المعتاد من الأيام اللي سجّلت فيها، عشان يكمّل الأيام اللي نسيت تسجّلها
+const dayKey = ms => fmtDate(dayStart(ms));
+const noSpend = () => db.prefs.noSpend || (db.prefs.noSpend = []);
+function loggedDays(from, to) {
+  const s = new Set(db.txns.filter(t => t.type === 'EXPENSE' && t.date >= from && t.date <= to).map(t => dayKey(t.date)));
+  noSpend().forEach(k => s.add(k)); return s;
+}
+// صرف اليوم العادي لكل تصنيف (المتغير بس)، ولو فيه بيانات كفاية لنفس يوم الأسبوع بيستخدمها
+function usualDay(ms = Date.now()) {
+  const t0 = dayStart(Date.now()); const from = t0 - 56 * DAY;
+  const days = [...loggedDays(from, t0 - 1)];
+  if (days.length < 5) return { items: [], total: 0, days: days.length };
+  const wd = new Date(ms).getDay();
+  const same = days.filter(k => new Date(k + 'T12:00').getDay() === wd);
+  const use = new Set(same.length >= 3 ? same : days);
+  const per = {};
+  db.txns.filter(t => t.type === 'EXPENSE' && t.date >= from && t.date < t0 && !isFixedTxn(t) && t.source !== 'ESTIMATE' && use.has(dayKey(t.date))).forEach(t => {
+    const k = t.categoryId || 0; const x = per[k] = per[k] || { sum: 0, d: new Set(), acc: {} };
+    x.sum += conv(t.amount, txCur(t)); x.d.add(dayKey(t.date)); x.acc[t.accountId] = (x.acc[t.accountId] || 0) + 1;
+  });
+  const items = Object.entries(per).filter(([, x]) => x.d.size >= use.size * 0.3)
+    .map(([k, x]) => ({ categoryId: +k || null, amount: Math.round(x.sum / use.size), accountId: +Object.entries(x.acc).sort((a, b) => b[1] - a[1])[0][0] }))
+    .filter(i => i.amount > 0);
+  // المصاريف الثابتة اليومية اليدوية (زي المواصلات) بتدخل كمان
+  db.recurring.filter(r => r.active && r.auto === false && r.type === 'EXPENSE' && r.period === 'DAILY').forEach(r => items.push({ categoryId: r.categoryId, amount: r.amount, accountId: r.accountId, fixedId: r.id, merchant: r.merchant }));
+  return { items, total: items.reduce((s, i) => s + i.amount, 0), days: use.size };
+}
+// الأيام اللي فاتت (آخر 7 أيام) ومفيهاش ولا مصروف
+function missedDays() {
+  if (!db.txns.length) return [];
+  const t0 = dayStart(Date.now()); const first = dayStart(db.txns.reduce((m, t) => Math.min(m, t.date), Date.now()));
+  const logged = loggedDays(t0 - 7 * DAY, t0);
+  const out = [];
+  for (let i = 7; i >= 1; i--) { const d = t0 - i * DAY; if (d > first && !logged.has(dayKey(d))) out.push(d); }
+  return out;
+}
+function fillUsual(days) {
+  let n = 0, total = 0; const ids = [];
+  days.forEach(d => {
+    const u = usualDay(d);
+    u.items.forEach(i => {
+      const accId = acc(i.accountId) ? i.accountId : (db.accounts.find(a => !a.archived) || {}).id; if (!accId) return;
+      const id = newId(); ids.push(id);
+      db.txns.push({ id, type: 'EXPENSE', amount: i.amount, accountId: accId, categoryId: i.categoryId, merchant: i.merchant || '', note: 'تقديري (يومك العادي)', date: dayStart(d) + 20 * 3600000, source: 'ESTIMATE', fixedId: i.fixedId || null });
+      if (i.fixedId) { const r = db.recurring.find(x => x.id === i.fixedId); if (r) markFixedPaid(r, dayStart(d) + 20 * 3600000); }
+      n++; total += i.amount;
+    });
+    if (!u.items.length) noSpend().push(dayKey(d));
+  });
+  save(); return { n, total, ids };
+}
+function usualCard() {
+  const miss = missedDays(); if (!miss.length) return '';
+  const est = miss.reduce((s, d) => s + usualDay(d).total, 0);
+  return `<div class="card reminder"><div class="row"><span class="ib warn">${ic('calendar')}</span><div class="grow"><b>ماسجّلتش مصاريف ${miss.length === 1 ? 'يوم ' + new Date(miss[0]).toLocaleDateString('ar-EG', { weekday: 'long' }) : miss.length + ' أيام'}</b>
+    <div class="muted">${est ? `يومك العادي ≈ <b class="num">${money(est)}</b>. نسجّله تقديري وتعدّله بعدين؟` : 'سجّل اللي صرفته أو قول ماصرفتش حاجة'}</div></div></div>
+    <div class="btns">${est ? '<button class="btn small primary" id="uFill">سجّل زي العادي</button><button class="btn small" id="uReview">مراجعة</button>' : ''}<button class="btn small" id="uNone">ماصرفتش حاجة</button></div></div>`;
+}
+function bindUsualCard() {
+  if ($('#uFill')) $('#uFill').onclick = () => { const r = fillUsual(missedDays()); toast(`اتسجّل ${money(r.total)} تقديري`); render(); };
+  if ($('#uReview')) $('#uReview').onclick = openUsualReview;
+  if ($('#uNone')) $('#uNone').onclick = () => { missedDays().forEach(d => noSpend().push(dayKey(d))); save(); render(); };
+}
+function openUsualReview() {
+  const miss = missedDays();
+  sheet('الأيام اللي ماتسجلتش', `<p class="muted">ده تقدير من الأيام اللي سجّلت فيها (آخر 8 أسابيع${''}). علّم على الأيام اللي عاوز تسجّلها تقديري، والباقي اعتبره ماصرفتش فيه.</p>
+    ${miss.map(d => { const u = usualDay(d); return `<div class="insight"><input type="checkbox" data-ud="${d}" ${u.items.length ? 'checked' : ''}><div class="grow"><b>${new Date(d).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'short' })}</b> · <span class="num">${money(u.total)}</span>
+      <div class="muted">${u.items.map(i => `${(cat(i.categoryId) || {}).icon || '📦'} ${esc(i.merchant || lbl((cat(i.categoryId) || {}).name || 'بدون تصنيف'))} ${money(i.amount).replace(/\.00$/, '')}`).join('، ') || 'مفيش بيانات كفاية'}</div></div></div>`; }).join('')}
+    <div class="btns"><button class="btn primary" id="urGo">سجّل</button></div>
+    <p class="muted">المصاريف التقديرية بتظهر في الحركات بعلامة «تقديري»، اضغط على أي واحدة تعدّل مبلغها.</p>`, () => {
+    $('#urGo').onclick = () => {
+      const on = [], off = [];
+      document.querySelectorAll('[data-ud]').forEach(c => (c.checked ? on : off).push(+c.dataset.ud));
+      off.forEach(d => noSpend().push(dayKey(d)));
+      const r = fillUsual(on); toast(`اتسجّل ${money(r.total)} تقديري`); closeSheet();
+    };
+  });
+}
+
 // ================= دليل البرنامج بالصوت =================
 // كل موضوع: كلمات بيتعرف بيها، عنوان، الشرح، والشاشة اللي يفتحها
 const HELP = [
@@ -1612,6 +1701,7 @@ const HELP = [
   { k: ['ميزانيه', 'تصنيف', 'تصنيفات'], t: 'التصنيفات والميزانيات', a: 'من المزيد ثم التصنيفات والميزانيات، حط ميزانية شهرية لكل تصنيف، والتطبيق ينبهك لما توصل 80 في المية.', go: () => openCategories() },
   { k: ['نسخه', 'احتياطي', 'باك اب', 'اصدر', 'excel', 'اكسل'], t: 'النسخ الاحتياطي', a: 'بياناتك على موبايلك بس. خد نسخة احتياطية مشفرة من المزيد ثم نسخ احتياطي واستعادة، واحفظها في iCloud.', go: () => openBackup() },
   { k: ['قفل', 'باسورد', 'pin', 'فيس'], t: 'القفل', a: 'من المزيد ثم قفل PIN، حط رقم سري، وتقدر تفعّل الفتح بالوش.', go: () => openPin() },
+  { k: ['نسيت', 'كسلت', 'مشغول', 'ماسجلتش', 'العادي', 'تقديري'], t: 'لو نسيت تسجّل', a: 'لو كسلت أو كنت مشغول، التطبيق بيتعلم يومك العادي من الأيام اللي سجّلت فيها. هيظهرلك في الرئيسية الأيام اللي ماتسجلتش، واضغط سجّل زي العادي، أو قول للمساعد: سجّل يومي العادي. المصاريف دي بتتعلّم تقديري وتقدر تعدّلها بعدين، ولو ماصرفتش حاجة اضغط ماصرفتش حاجة.' },
   { k: ['صوت', 'المساعد', 'اقول ايه', 'اوامر'], t: 'المساعد الصوتي', a: 'اضغط المايك وقول مثلاً: صرفت 200 أكل، قبضت 5000، حالتي المالية، فاضلي كام، مصاريفي الثابتة، 500 جنيه تساوي كام ساعة، أو اسألني إزاي أعمل أي حاجة في البرنامج. وتقدر تغيّر الصوت من الإعدادات.' }
 ];
 // شرح الشاشة المفتوحة دلوقتي
@@ -1732,6 +1822,14 @@ function parseVoice(raw) {
 // ينفّذ الأمر الصوتي ويرجّع الرد اللي هيتقال. الإضافة بتتسجّل مباشرة مع إمكانية التراجع.
 function handleVoice(text) {
   const t = normDigits(text).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+  if (/(يومي العادي|زي العادي|زي كل يوم|نفس كل يوم|زي امبارح)/.test(t)) {
+    const miss = missedDays(); const today = !db.txns.some(x => x.type === 'EXPENSE' && x.date >= dayStart(Date.now()));
+    const days = /(امبارح|الايام|فاتت)/.test(t) ? miss : today ? [Date.now()] : miss;
+    if (!days.length) return { reply: 'مفيش أيام ناقصة، كل حاجة متسجلة' };
+    const r = fillUsual(days); render();
+    if (!r.n) return { reply: 'لسه مش عارف يومك العادي، سجّل مصاريفك كام يوم الأول' };
+    return { reply: `سجّلت ${Math.round(r.total)} جنيه تقديري لـ ${days.length === 1 ? 'يوم' : days.length + ' أيام'}، وتقدر تعدّلها من الحركات` };
+  }
   const hr = helpReply(t); if (hr) return hr;
   const p = dailyPlan();
   if (/(فاضل|باقي|متبقي|اقدر اصرف|ممكن اصرف|مسموح)/.test(t)) {
@@ -1943,7 +2041,7 @@ function openTxn(t, preset) {
       if (type === 'TRANSFER' && (!t.toAccountId || t.toAccountId === t.accountId)) return toast('اختر حساباً مختلفاً للتحويل');
       const rec = { id: t.id || newId(), type, amount: amt, accountId: t.accountId, toAccountId: type === 'TRANSFER' ? t.toAccountId : null,
         toAmount: type === 'TRANSFER' ? parseAmount(t.toAmount) : null, categoryId: type === 'TRANSFER' ? null : t.categoryId,
-        merchant: t.merchant.trim(), note: t.note.trim(), date: t.date, source: t.source || 'MANUAL', hash: t.hash || null, fixedId: type === 'EXPENSE' ? t.fixedId || null : null };
+        merchant: t.merchant.trim(), note: t.note.trim(), date: t.date, source: t.source === 'ESTIMATE' ? 'MANUAL' : t.source || 'MANUAL', hash: t.hash || null, fixedId: type === 'EXPENSE' ? t.fixedId || null : null };
       if (rec.type === 'EXPENSE') linkFixed(rec, isNew, t.makeFixed && { period: t.fixPeriod || 'MONTHLY', auto: !!t.fixAuto });
       const i = db.txns.findIndex(x => x.id === rec.id);
       if (i >= 0) db.txns[i] = rec; else db.txns.push(rec);
