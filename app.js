@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '28';
+const APP_VERSION = '29';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1448,7 +1448,9 @@ function cashPlan() {
   }
   // أقساط البطاقة بتتدفع مع سداد البطاقة في يوم السداد اللي بعد القسط، وغيرها بتتدفع في ميعادها
   db.installments.forEach(pl => { const card = acc(pl.cardId); const viaCard = card && card.type === 'CREDIT' && card.dueDay;
-    planSummary(pl).rows.slice(Math.min(pl.paid || 0, 999)).forEach(r => { const d = viaCard ? dayStart(r.date) + daysUntilDayFrom(card.dueDay, r.date) * DAY : r.date; if (d >= t0 && d <= end) add(d, -conv(r.payment, card ? card.currency : base()), 'قسط ' + pl.name, 'fixed'); }); });
+    // لو الكشف متسجل، أقساط الكشف ده داخلة في مبلغه فماتتحسبش تاني
+    const st = viaCard ? stmtLeft(card) : null;
+    planSummary(pl).rows.slice(Math.min(pl.paid || 0, 999)).forEach(r => { const d = viaCard ? dayStart(r.date) + daysUntilDayFrom(card.dueDay, r.date) * DAY : r.date; if (st && d <= dayStart(st.date)) return; if (d >= t0 && d <= end) add(d, -conv(r.payment, card ? card.currency : base()), 'قسط ' + pl.name, 'fixed'); }); });
   db.accounts.filter(a => a.type === 'CREDIT' && !a.archived && a.dueDay).forEach(a => {
     const owed = -(bal[a.id] || 0); const st = stmtLeft(a);
     if (st) {
