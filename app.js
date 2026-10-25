@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '37';
+const APP_VERSION = '38';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1288,6 +1288,7 @@ function openSettings() {
     $('#stVoiceOn').onchange = e => { db.prefs.voiceOff = !e.target.checked; save(); if (!db.prefs.voiceOff) speak('تم تشغيل الصوت'); else speechSynthesis && speechSynthesis.cancel(); };
     document.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => { db.prefs.voiceRate = +b.dataset.vr; save(); document.querySelectorAll('[data-vr]').forEach(x => x.classList.toggle('on', x === b)); speak('ده صوتي بالسرعة دي'); });
     $('#stVoiceTest').onclick = () => speak('صرفت النهارده 250 جنيه، وفاضلك 1500 لحد القبض');
+    $('#stVoiceDiag').onclick = () => voiceDiag($('#vDiag'));
     $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
   });
 }
@@ -2379,6 +2380,24 @@ function speak(text, onEnd, plain) {
   // من غير تأخير لو ممكن، عشان الآيفون يعتبر الكلام جاي من لمسة
   if (busy) setTimeout(go, 150); else go();
 }
+// فحص الصوت: بيجرّب كل طريقة ويكتب النتيجة، عشان نعرف المشكلة فين بالظبط
+function voiceDiag(box) {
+  const res = []; const show = () => { box.innerHTML = `<div class="insight"><div class="grow" style="font-size:13px;line-height:1.7">${res.join('<br>')}</div></div>`; };
+  const ss = 'speechSynthesis' in window; const all = ss ? speechSynthesis.getVoices() : [];
+  res.push(`نسخة البرنامج: ${APP_VERSION}`, `مفتوح من الشاشة الرئيسية: ${standalone ? 'أيوه' : 'لأ (من Safari)'}`, `القراءة بالصوت مدعومة: ${ss ? 'أيوه' : 'لأ ❌'}`,
+    `عدد أصوات الجهاز: ${all.length}، منها عربي: ${arVoices().length}${arVoices().length ? '' : ' ❌'}`, `الصوت المختار: ${db.prefs.voiceURI || 'تلقائي'}`, `Gemini: ${db.prefs.gmKey ? 'فيه مفتاح' : 'مفيش مفتاح'}${gmOn() ? ' (شغال كافتراضي)' : ''}`,
+    `الصوت مقفول من الإعدادات: ${db.prefs.voiceOff ? 'أيوه ❌' : 'لأ'}`, '⏳ بجرّب صوت الجهاز...');
+  show();
+  if (!ss) return;
+  speechSynthesis.cancel(); keepAudio(true);
+  const u = new SpeechSynthesisUtterance('تجربة الصوت'); const v = arVoices()[0]; if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'ar-SA';
+  let ok = false; u.onstart = () => { ok = true; res[res.length - 1] = '✅ صوت الجهاز اشتغل. لو ماسمعتش حاجة، علّي الصوت من زراير الموبايل.'; show(); };
+  u.onerror = e => { res[res.length - 1] = '❌ صوت الجهاز رجّع خطأ: ' + e.error; show(); };
+  u.onend = () => keepAudio(false); curUtter = u; speechSynthesis.speak(u);
+  setTimeout(() => { if (!ok && /⏳/.test(res[res.length - 1])) { res[res.length - 1] = '❌ صوت الجهاز مابدأش خالص'; show(); }
+    if (db.prefs.gmKey) { res.push('⏳ بجرّب Gemini...'); show(); speak.token = (speak.token || 0) + 1;
+      gmSpeak('تجربة', null, db.prefs.gmVoice && db.prefs.gmVoice !== 'off' ? db.prefs.gmVoice : 'Kore').then(() => { res[res.length - 1] = '✅ Gemini اشتغل'; show(); }).catch(e => { res[res.length - 1] = '❌ ' + gmError(e) + ` (${esc(String(e.message || e))})`; show(); }); } }, 2500);
+}
 // أمثلة الأصوات: كل صوت عربي على الجهاز بزرار تشغيل، والمستخدم يختار اللي يعجبه
 const VOICE_SAMPLE = 'أهلاً يا يوسف، صرفت النهارده 250 جنيه، وتقدر تصرف 400 في اليوم لحد القبض.';
 const voiceQuality = v => /premium|مميز/i.test(v.name) ? 'مميز' : /enhanced|محسّن|neural|natural/i.test(v.name) ? 'محسّن' : 'عادي';
@@ -2417,6 +2436,7 @@ function voiceSettingsHtml() {
     <button class="btn primary block" id="stVoices" style="margin-top:8px">${ic('speaker')} اسمع أمثلة الأصوات واختار (${list.length})</button>
     <label class="f">السرعة</label><div class="chips">${[[0.8, 'بطيء'], [0.95, 'عادي'], [1.1, 'سريع']].map(([r, t]) => `<button class="chip ${(db.prefs.voiceRate || 0.95) === r ? 'on' : ''}" data-vr="${r}">${t}</button>`).join('')}</div>
     <button class="btn block" id="stVoiceTest" style="margin-top:8px">${ic('speaker')} جرّب الصوت</button>
+    <button class="btn block" id="stVoiceDiag" style="margin-top:8px">🩺 فحص الصوت</button><div id="vDiag"></div>
     <p class="muted">لصوت أوضح على الآيفون: الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، ونزّل صوت «Majed» أو «Laila» بنسخة <b>Enhanced/محسّن</b>، وبعدين اختاره هنا.</p>`;
 }
 const NUM_WORDS = { 'واحد': 1, 'واحده': 1, 'اتنين': 2, 'اثنين': 2, 'تلاته': 3, 'ثلاثه': 3, 'اربعه': 4, 'خمسه': 5, 'سته': 6, 'سبعه': 7, 'تمانيه': 8, 'ثمانيه': 8, 'تسعه': 9, 'عشره': 10,
