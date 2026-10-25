@@ -1034,6 +1034,7 @@ function openSettings() {
     <button class="btn primary block" id="stIcs" style="margin-top:10px">📅 إضافة التذكير اليومي للتقويم</button>
     <p class="muted">هيظهر لك تنبيه كل يوم في الوقت ده على الآيفون <b>وعلى ساعة أبل</b> كمان. اضغط «Add All» لما يظهر لك التقويم.</p>
     ${notifOk ? `<button class="btn block" id="stNotif">🔔 تفعيل إشعارات التطبيق</button><p class="muted">على الآيفون محتاج تكون ضايف التطبيق للشاشة الرئيسية (iOS 16.4 أو أحدث).</p>` : ''}
+    ${voiceSettingsHtml()}
     <h3 style="margin-top:16px">رسائل البنك</h3>
     <label class="row"><input type="checkbox" id="stAuto" ${db.prefs.autoAddSms ? 'checked' : ''}> إضافة حركات الرسائل تلقائياً</label>
     <button class="btn block" id="stSmsHow" style="margin-top:8px">⚡ طريقة الربط التلقائي بالاختصارات</button>
@@ -1062,6 +1063,9 @@ function openSettings() {
     $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
     $('#stSmsHow').onclick = openSmsAutomation;
     $('#stProf').onclick = () => openOnboarding(true);
+    if ($('#stVoice')) $('#stVoice').onchange = e => { db.prefs.voiceURI = e.target.value; save(); speak('أهلاً، أنا مساعدك في محفظتي'); };
+    document.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => { db.prefs.voiceRate = +b.dataset.vr; save(); document.querySelectorAll('[data-vr]').forEach(x => x.classList.toggle('on', x === b)); speak('ده صوتي بالسرعة دي'); });
+    $('#stVoiceTest').onclick = () => speak('صرفت النهارده 250 جنيه، وفاضلك 1500 لحد القبض');
     $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
   });
 }
@@ -1589,15 +1593,38 @@ async function checkRiskNotify() {
 }
 
 // ================= المساعد الصوتي =================
+// أحسن صوت عربي متاح على الجهاز: المحسّن/المميز أولاً، والمصري قبل غيره. المستخدم يقدر يختار من الإعدادات.
+let voicesCache = [];
+function arVoices() {
+  if ('speechSynthesis' in window) { const v = speechSynthesis.getVoices(); if (v.length) voicesCache = v; }
+  const score = x => (/premium|enhanced|محسّن|مميز|neural|natural/i.test(x.name) ? 100 : 0) + (/ar[-_]EG/i.test(x.lang) ? 20 : /ar[-_]SA/i.test(x.lang) ? 10 : 0)
+    + (/majed|maged|laila|tarik|hoda|salma|shakir|google/i.test(x.name) ? 8 : 0) + (x.localService ? 2 : 0) - (/eloquence|compact|grandpa|grandma|rocko|shelley|flo|reed|sandy/i.test(x.name) ? 50 : 0);
+  return voicesCache.filter(x => /^ar/i.test(x.lang)).sort((a, b) => score(b) - score(a));
+}
+if ('speechSynthesis' in window) { arVoices(); speechSynthesis.onvoiceschanged = arVoices; }
+// تنضيف النص قبل القراية: الأرقام من غير كسور وفواصل، ومن غير إيموجي ورموز
+function speechText(text) {
+  return String(text).replace(/<[^>]+>/g, '').replace(/[⁦-⁩]/g, '')
+    .replace(/(\d),(?=\d{3})/g, '$1').replace(/(\d+)\.00\b/g, '$1').replace(/(\d+)\.(\d)\d?\b/g, (m, a, b) => +b ? m : a)
+    .replace(/\bEGP\b/g, 'جنيه').replace(/%/g, ' في المية').replace(/[\u{1F300}-\u{1FAFF}☀-➿️📌•«»]/gu, '').replace(/\s+/g, ' ').trim();
+}
 function speak(text) {
   if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  const voices = speechSynthesis.getVoices();
-  const v = voices.find(x => /ar[-_]EG/i.test(x.lang)) || voices.find(x => /^ar/i.test(x.lang));
+  const u = new SpeechSynthesisUtterance(speechText(text));
+  const list = arVoices();
+  const v = list.find(x => x.voiceURI === db.prefs.voiceURI) || list[0];
   if (v) u.voice = v;
-  u.lang = v ? v.lang : 'ar-EG'; u.rate = 1;
+  u.lang = v ? v.lang : 'ar-EG'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1;
   speechSynthesis.speak(u);
+}
+function voiceSettingsHtml() {
+  const list = arVoices();
+  return `<h3 style="margin-top:16px">صوت المساعد</h3>
+    ${list.length ? `<label class="f">الصوت</label><select class="in" id="stVoice"><option value="">تلقائي (أحسن صوت متاح)</option>${list.map(v => `<option value="${esc(v.voiceURI)}" ${db.prefs.voiceURI === v.voiceURI ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>` : '<p class="muted">مفيش أصوات عربي على الجهاز.</p>'}
+    <label class="f">السرعة</label><div class="chips">${[[0.8, 'بطيء'], [0.95, 'عادي'], [1.1, 'سريع']].map(([r, t]) => `<button class="chip ${(db.prefs.voiceRate || 0.95) === r ? 'on' : ''}" data-vr="${r}">${t}</button>`).join('')}</div>
+    <button class="btn block" id="stVoiceTest" style="margin-top:8px">${ic('speaker')} جرّب الصوت</button>
+    <p class="muted">لصوت أوضح على الآيفون: الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، ونزّل صوت «Majed» أو «Laila» بنسخة <b>Enhanced/محسّن</b>، وبعدين اختاره هنا.</p>`;
 }
 const NUM_WORDS = { 'واحد': 1, 'واحده': 1, 'اتنين': 2, 'اثنين': 2, 'تلاته': 3, 'ثلاثه': 3, 'اربعه': 4, 'خمسه': 5, 'سته': 6, 'سبعه': 7, 'تمانيه': 8, 'ثمانيه': 8, 'تسعه': 9, 'عشره': 10,
   'حداشر': 11, 'اتناشر': 12, 'تلتاشر': 13, 'اربعتاشر': 14, 'خمستاشر': 15, 'ستاشر': 16, 'سبعتاشر': 17, 'تمنتاشر': 18, 'تسعتاشر': 19,
