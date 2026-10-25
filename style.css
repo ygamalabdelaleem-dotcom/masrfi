@@ -337,3 +337,5 @@ svg.fc .a.warn { fill: color-mix(in srgb, var(--warn) 12%, transparent); } svg.f
 .hrs { text-align: center; min-height: 18px; margin-top: 4px; }
 .chip.fx { border-color: var(--primary); color: var(--primary); }
 .section-title.row { margin-top: 14px; }
+svg.i.inl { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; }
+[data-play] svg.i { width: 18px; height: 18px; }

@@ -1067,7 +1067,7 @@ function openSettings() {
     $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
     $('#stSmsHow').onclick = openSmsAutomation;
     $('#stProf').onclick = () => openOnboarding(true);
-    if ($('#stVoice')) $('#stVoice').onchange = e => { db.prefs.voiceURI = e.target.value; save(); speak('أهلاً، أنا مساعدك في محفظتي'); };
+    $('#stVoices').onclick = openVoicePicker;
     document.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => { db.prefs.voiceRate = +b.dataset.vr; save(); document.querySelectorAll('[data-vr]').forEach(x => x.classList.toggle('on', x === b)); speak('ده صوتي بالسرعة دي'); });
     $('#stVoiceTest').onclick = () => speak('صرفت النهارده 250 جنيه، وفاضلك 1500 لحد القبض');
     $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
@@ -1774,13 +1774,14 @@ function unlockSpeech() {
 function speak(text, onEnd, plain) {
   if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
   const say = speechText(text); if (!say) return;
+  const only = speak.only;
   const busy = speechSynthesis.speaking || speechSynthesis.pending;
   if (busy) speechSynthesis.cancel();
   setTimeout(() => {
     const u = new SpeechSynthesisUtterance(say);
     const list = arVoices();
-    const v = plain ? null : list.find(x => x.voiceURI === db.prefs.voiceURI) || list[0];
-    if (v) u.voice = v;
+    const v = plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI)) || list[0];
+    try { if (v) u.voice = v; } catch (e) { }
     u.lang = v ? v.lang : 'ar-EG'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1; u.volume = 1;
     let started = false;
     u.onstart = () => { started = true; };
@@ -1793,10 +1794,24 @@ function speak(text, onEnd, plain) {
     if (!plain) setTimeout(() => { if (!started && curUtter === u) { speechSynthesis.cancel(); speak(text, onEnd, true); } }, 2000);
   }, busy ? 120 : 30);
 }
+// أمثلة الأصوات: كل صوت عربي على الجهاز بزرار تشغيل، والمستخدم يختار اللي يعجبه
+const VOICE_SAMPLE = 'أهلاً يا يوسف، صرفت النهارده 250 جنيه، وتقدر تصرف 400 في اليوم لحد القبض.';
+const voiceQuality = v => /premium|مميز/i.test(v.name) ? 'مميز' : /enhanced|محسّن|neural|natural/i.test(v.name) ? 'محسّن' : 'عادي';
+function openVoicePicker() {
+  const list = arVoices();
+  const row = (uri, name, sub, q) => `<div class="item"><button class="btn small" data-play="${esc(uri)}">${ic('speaker')}</button><div class="grow"><div class="ellipsis">${esc(name)}</div><div class="muted">${sub}</div></div>
+    ${q ? `<span class="pill">${q}</span>` : ''}<button class="chip ${(db.prefs.voiceURI || '') === uri ? 'on' : ''}" data-pick="${esc(uri)}">${(db.prefs.voiceURI || '') === uri ? '✓ مختار' : 'اختار'}</button></div>`;
+  sheet('أمثلة الأصوات', `<p class="muted">اضغط ${ic('speaker', 'inl')} تسمع كل صوت، واختار اللي يعجبك. الأصوات دي من الآيفون نفسه، فالتطبيق مايقدرش يجيب غيرها.</p>
+    <div class="list">${row('', 'تلقائي', 'أحسن صوت متاح', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>
+    ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}`, () => {
+    document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak(VOICE_SAMPLE); speak.only = null; });
+    document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
+  });
+}
 function voiceSettingsHtml() {
   const list = arVoices();
   return `<h3 style="margin-top:16px">صوت المساعد</h3>
-    ${list.length ? `<label class="f">الصوت</label><select class="in" id="stVoice"><option value="">تلقائي (أحسن صوت متاح)</option>${list.map(v => `<option value="${esc(v.voiceURI)}" ${db.prefs.voiceURI === v.voiceURI ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>` : '<p class="muted">مفيش أصوات عربي على الجهاز.</p>'}
+    <button class="btn primary block" id="stVoices">${ic('speaker')} اسمع أمثلة الأصوات واختار (${list.length})</button>
     <label class="f">السرعة</label><div class="chips">${[[0.8, 'بطيء'], [0.95, 'عادي'], [1.1, 'سريع']].map(([r, t]) => `<button class="chip ${(db.prefs.voiceRate || 0.95) === r ? 'on' : ''}" data-vr="${r}">${t}</button>`).join('')}</div>
     <button class="btn block" id="stVoiceTest" style="margin-top:8px">${ic('speaker')} جرّب الصوت</button>
     <p class="muted">لصوت أوضح على الآيفون: الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، ونزّل صوت «Majed» أو «Laila» بنسخة <b>Enhanced/محسّن</b>، وبعدين اختاره هنا.</p>`;
@@ -1969,11 +1984,13 @@ function openVoice() {
     <textarea class="in" id="vText" placeholder="${SR ? 'الكلام هيظهر هنا ويمكنك تعديله' : 'اضغط على المايك في كيبورد الآيفون واتكلم، أو اكتب'}" style="min-height:80px;margin-top:10px"></textarea>
     <div class="btns"><button class="btn primary" id="vGo">تنفيذ</button><button class="btn" id="vTips">${ic('speaker')} اسمع اقتراح النهارده</button></div>
     <div id="vOut" style="margin-top:10px"></div>
+    <button class="btn block" id="vPick" style="margin-top:8px">${ic('speaker')} غيّر صوت المساعد</button>
     <h3 style="margin-top:16px">ساعدني أفهم البرنامج</h3>
     <button class="btn primary block" id="vTour">${ic('sparkle')} جولة صوتية في البرنامج</button>
     <div class="chips" style="margin-top:10px;flex-wrap:wrap">${HELP.map((h, i) => `<button class="chip" data-hp="${i}">${h.t}</button>`).join('')}</div>
     <p class="muted">أو اسأل بصوتك: «إزاي أضيف مصروف ثابت؟» «يعني إيه حد الأمان؟» «اشرح الصفحة دي».</p>`, () => {
     $('#vTour').onclick = startTour;
+    $('#vPick').onclick = openVoicePicker;
     document.querySelectorAll('[data-hp]').forEach(b => b.onclick = () => { const h = HELP[+b.dataset.hp]; $('#vOut').innerHTML = insH('bulb', `<b>${h.t}</b><br>${esc(h.a)}`) + (h.go ? '<button class="btn small primary" id="vOpen">افتحها</button>' : ''); if (h.go) $('#vOpen').onclick = h.go; speak(h.a); $('#vOut').scrollIntoView({ behavior: 'smooth' }); });
     const out = $('#vOut');
     const run = () => {
