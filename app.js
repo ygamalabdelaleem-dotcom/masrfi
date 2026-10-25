@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '22';
+const APP_VERSION = '23';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -736,8 +736,14 @@ function schedule(p) {
   let bal = P;
   if (+p.monthlyFixed > 0) {
     // المستخدم عارف القسط الشهري من البنك: نستخدمه زي ما هو
-    const pay = +p.monthlyFixed;
-    for (let i = 0; i < n; i++) { const principal = P / n; bal = Math.max(0, bal - principal); rows.push({ i: i + 1, date: dateOf(i), payment: pay + (i === 0 ? fees : 0), principal, interest: Math.max(0, pay - principal), balance: bal }); }
+    const pay = +p.monthlyFixed; const r = annual / 12;
+    for (let i = 0; i < n; i++) {
+      // مع فائدة متناقصة: الفائدة على المتبقي والباقي من القسط أصل (زي جدول البنك)
+      const interest = p.method === 'REDUCING' && r ? bal * r : Math.max(0, pay - P / n);
+      const principal = i === n - 1 ? bal : Math.min(bal, pay - interest);
+      bal = Math.max(0, bal - principal);
+      rows.push({ i: i + 1, date: dateOf(i), payment: pay + (i === 0 ? fees : 0), principal, interest, balance: bal });
+    }
     return rows;
   }
   if (p.method === 'REDUCING') {
