@@ -27,6 +27,7 @@
     <p>أدخل رمز PIN</p>
     <input id="pinIn" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off">
     <button class="btn primary" id="pinGo">فتح</button>
+    <button class="btn face hidden" id="faceGo"></button>
     <p id="pinErr" class="err"></p>
   </div>
 </div>
@@ -56,6 +57,8 @@
   </div>
 </div>
 <div id="toast" class="toast hidden"></div>
+<button id="vfab" class="vfab" aria-label="المساعد الصوتي"></button>
+<div id="vbubble" class="vbubble hidden"></div>
 <div id="iosHint" class="ios-hint hidden">
   لتثبيت التطبيق على الآيفون: اضغط زر المشاركة <b>⬆︎</b> في Safari ثم <b>«إضافة إلى الشاشة الرئيسية»</b>.
   <button class="x" id="iosHintClose">✕</button>

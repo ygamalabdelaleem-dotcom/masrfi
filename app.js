@@ -53,7 +53,12 @@ const ICONS = {
   report: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 17v-3M12 17v-6M16 17v-4"/>',
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
   alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
-  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>',
+  faceid: '<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M9 9v1M15 9v1M12 9v4h-1M9 16a4 4 0 0 0 6 0"/>',
+  speaker: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  pie: '<path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.3A9 9 0 0 1 20.7 9H15z"/>',
+  bulb: '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z"/>'
 };
 const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 const ACC_ICONS = { BANK: 'bank', CASH: 'cash', CREDIT: 'card', SAVING: 'coins', GOLD: 'gem', WALLET: 'phone' };
@@ -483,13 +488,13 @@ function renderHome() {
   const greet = hr < 12 ? 'صباح الخير' : 'مساء الخير';
   const expPct = inc > 0 ? Math.min(100, exp / inc * 100) : (exp > 0 ? 100 : 0);
   const tiles = [['exp', 'up', 'مصروف'], ['inc', 'down', 'دخل'], ['tr', 'transfer', 'تحويل'], ['sms', 'mail', 'رسائل البنك', pending],
-    ['cards', 'card', 'البطاقات'], ['savings', 'coins', 'الادخار'], ['rep', 'chart', 'التقارير'], ['plans', 'calendar', 'الأقساط']];
+    ['cards', 'card', 'البطاقات'], ['savings', 'coins', 'الادخار'], ['rep', 'chart', 'التقارير'], ['voice', 'mic', 'مساعد صوتي']];
   view().innerHTML = `
     <section class="band">
       <div class="greet">${greet}</div>
       <div class="bal-row">
         <div><div class="label">إجمالي الرصيد</div><div class="big num">${m(total)} <small>${base()}</small></div></div>
-        <button class="eye" id="hEye" aria-label="إظهار أو إخفاء الرصيد">${ic(hide ? 'eyeOff' : 'eye')}</button>
+        <div class="row" style="gap:8px"><button class="eye" id="hMic" aria-label="المساعد الصوتي">${ic('mic')}</button><button class="eye" id="hEye" aria-label="إظهار أو إخفاء الرصيد">${ic(hide ? 'eyeOff' : 'eye')}</button></div>
       </div>
       <div class="acc-scroll">${db.accounts.filter(a => !a.archived).map(a => `<button class="acc-card ${a.type === 'CREDIT' ? 'credit' : ''}" data-acc="${a.id}">
         <div class="row between"><span class="acc-ic">${accIcon(a)}</span><span class="acc-type">${ACC_TYPES[a.type] || ''}</span></div>
@@ -510,6 +515,8 @@ function renderHome() {
       <div class="bar ${expPct >= 90 ? 'over' : expPct >= 70 ? 'warn' : ''}" style="height:10px"><i style="width:${expPct}%"></i></div>
       <div class="muted" style="margin-top:6px">${inc > 0 ? `صرفت ${expPct.toFixed(0)}% من دخلك الشهر ده` : 'سجّل دخلك عشان تشوف نسبة الصرف'}</div>
     </div>
+    ${planCard(hide)}
+    ${spendCard(cats, exp, hide)}
     ${ins.length ? `<div class="card"><h3>رؤى ذكية</h3>${ins.join('')}</div>` : ''}
     ${budgets.length ? `<div class="card"><h3>الميزانيات</h3>${budgets.map(c => { const s = cats[c.id] || 0; const p = s / c.monthlyBudget * 100;
       return `<div style="margin-bottom:10px"><div class="row between"><span>${c.icon} ${esc(lbl(c.name))}</span><span class="num muted">${money(s)} / ${money(c.monthlyBudget)}</span></div>
@@ -527,7 +534,10 @@ function renderHome() {
   $('#hAll').onclick = () => setTab('txns');
   if ($('#hRem')) $('#hRem').onclick = () => openTxn();
   const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), tr: () => openTxn(null, { type: 'TRANSFER' }), sms: () => setTab('inbox'),
-    cards: () => setTab('cards'), savings: () => setTab('savings'), rep: () => setTab('reports'), plans: () => setTab('cards') };
+    cards: () => setTab('cards'), savings: () => setTab('savings'), rep: () => setTab('reports'), voice: openVoice };
+  view().querySelectorAll('[data-cat]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.cat, period: 'MONTH' }; setTab('txns'); });
+  if ($('#hSpeak')) $('#hSpeak').onclick = () => speak(dailyPlan().tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. '));
+  $('#hMic').onclick = quickVoice;
   view().querySelectorAll('[data-q]').forEach(b => b.onclick = qa[b.dataset.q]);
   $('#hEye').onclick = () => { db.prefs.hideBal = !db.prefs.hideBal; save(); renderHome(); };
   view().querySelectorAll('[data-acc]').forEach(b => b.onclick = () => {
@@ -627,8 +637,7 @@ function renderReports() {
 }
 
 // بحث بلغة طبيعية (قواعد محلية)
-function askNl(text) {
-  const out = $('#nlOut'); const t = normDigits(text).toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
+function askNl(text, out = $('#nlOut')) { const t = normDigits(text).toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
   if (!t.trim()) { out.innerHTML = ''; return; }
   let period = 'MONTH';
   if (/الشهر الماضي|الشهر اللي فات|last month/.test(t)) period = 'LAST';
@@ -649,7 +658,7 @@ function askNl(text) {
   const list = inRange(f, to).filter(x => x.type === type && (!catId || x.categoryId === catId));
   const sum = list.reduce((s, x) => s + conv(x.amount, txCur(x)), 0);
   out.innerHTML = `<div class="insight">${type === 'INCOME' ? 'إجمالي الدخل' : 'إجمالي المصروف'}${catId ? ' على ' + esc(lbl(cat(catId).name)) : ''} (${PERIOD_LABELS[period]}): <b class="num">${money(sum)}</b> ${base()} في ${list.length} حركة <button class="btn small" id="nlGo">عرض</button></div>`;
-  $('#nlGo').onclick = () => { filter = { q: '', type, accountId: 0, categoryId: catId, period }; setTab('txns'); };
+  out.querySelector('#nlGo').onclick = () => { $('#sheet').classList.add('hidden'); document.body.style.overflow = ''; filter = { q: '', type, accountId: 0, categoryId: catId, period }; setTab('txns'); };
 }
 
 function renderMore() {
@@ -1041,6 +1050,216 @@ function openSettings() {
     $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
     $('#stSmsHow').onclick = openSmsAutomation;
     $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
+  });
+}
+
+// ================= صرفت كام على إيه =================
+const PIE_COLORS = ['#1e74d6', '#0f9d58', '#e37400', '#d93025', '#8e44ad', '#00a3a3', '#c2185b', '#7c8a9e'];
+function spendCard(cats, exp, hide) {
+  const rows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+  if (!rows.length || !(exp > 0)) return '';
+  const top = rows.slice(0, 5);
+  const rest = rows.slice(5).reduce((s, r) => s + r[1], 0);
+  if (rest > 0) top.push(['0', rest]);
+  let acc0 = 0;
+  const stops = top.map(([, v], i) => { const a = acc0; acc0 += v / exp * 100; return `${PIE_COLORS[i % PIE_COLORS.length]} ${a}% ${acc0}%`; }).join(',');
+  return `<div class="card">
+    <div class="row between"><h3>صرفت على إيه الشهر ده</h3><span class="muted num">${hide ? '••••' : money(exp)}</span></div>
+    <div class="spend">
+      <div class="donut" style="background:conic-gradient(${stops})"><div><b>${top.length}</b><span class="muted">تصنيفات</span></div></div>
+      <div class="spend-list">${top.map(([id, v], i) => { const c = cat(+id); const name = +id === 0 ? 'أخرى' : c ? lbl(c.name) : 'بدون تصنيف';
+        return `<div class="srow" ${+id > 0 ? `data-cat="${id}"` : ''}><span class="sw" style="background:${PIE_COLORS[i % PIE_COLORS.length]}"></span><span class="grow ellipsis">${c && +id > 0 ? c.icon + ' ' : ''}${esc(name)}</span><b class="num">${hide ? '••' : money(v)}</b><span class="muted pct">${(v / exp * 100).toFixed(0)}%</span></div>`; }).join('')}</div>
+    </div></div>`;
+}
+
+// ================= الاقتراح اليومي =================
+function dailyPlan() {
+  const now = new Date(); const [f, t] = monthRange(0);
+  const month = inRange(f, t);
+  const [inc, exp] = typeTotals(month);
+  const incBase = inc || avgMonthly('INCOME');
+  const savePct = db.prefs.savingRate || 20;
+  const saveTarget = incBase * savePct / 100;
+  // مدفوعات متبقية الشهر ده: المعاملات المتكررة والأقساط اللي لسه ماتدفعتش
+  let upcoming = 0, upcomingN = 0;
+  db.recurring.filter(r => r.active && r.type === 'EXPENSE').forEach(r => {
+    let d = r.nextDate, g = 0; const x = { ...r };
+    while (d <= t && g++ < 40) { if (d >= Date.now()) { upcoming += conv(r.amount, (acc(r.accountId) || {}).currency || base()); upcomingN++; } x.nextDate = d; d = advance(x); }
+  });
+  db.installments.forEach(p => { const n = nextInstallment(p); if (n && n.date <= t && n.date >= f) { upcoming += n.payment; upcomingN++; } });
+  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1;
+  const remaining = incBase - exp - saveTarget - upcoming;
+  const daily = Math.max(0, remaining / daysLeft);
+  const todaySpent = typeTotals(inRange(new Date().setHours(0, 0, 0, 0), Date.now()))[1];
+  const tips = [];
+  if (!incBase) tips.push({ icon: 'down', text: 'سجّل دخلك الشهري (المرتب مثلاً) عشان أقدر أحسبلك تصرف كام في اليوم.' });
+  else if (remaining < 0) tips.push({ icon: 'alert', w: 1, text: `صرفك عدّى المسموح الشهر ده بـ <b class="num">${money(-remaining)}</b> بعد خصم الادخار والمدفوعات الجاية. حاول توقف الكماليات لآخر الشهر.` });
+  else if (todaySpent > daily) tips.push({ icon: 'alert', w: 1, text: `صرفت النهارده <b class="num">${money(todaySpent)}</b>، وده أكتر من حدّك اليومي <b class="num">${money(daily)}</b>. خفّف بكرة شوية.` });
+  else tips.push({ icon: 'coins', text: `لسه قدامك <b class="num">${money(daily - todaySpent)}</b> تقدر تصرفهم النهارده وانت ماشي على خطتك.` });
+  if (upcomingN) tips.push({ icon: 'calendar', text: `عندك ${upcomingN} مدفوعات جاية الشهر ده بإجمالي <b class="num">${money(upcoming)}</b>. سيبهم على جنب من دلوقتي.` });
+  const cats = catTotals(month, 'EXPENSE'); const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const over = db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome).map(c => [c, (cats[c.id] || 0) / now.getDate() * days]).filter(([c, p]) => p > c.monthlyBudget).sort((a, b) => b[1] / b[0].monthlyBudget - a[1] / a[0].monthlyBudget)[0];
+  if (over) tips.push({ icon: 'tag', w: 1, text: `مصروف ${esc(lbl(over[0].name))} ماشي إنه يوصل <b class="num">${money(over[1])}</b> والميزانية <b class="num">${money(over[0].monthlyBudget)}</b>. قلّله الأيام الجاية.` });
+  else {
+    let wants = 0; for (const k in cats) { const c = cat(+k); if (c && catGroup(c) === 'WANT') wants += cats[k]; }
+    if (incBase && wants > incBase * .3) tips.push({ icon: 'tag', w: 1, text: `الكماليات وصلت ${(wants / incBase * 100).toFixed(0)}% من دخلك، والأفضل ماتعديش 30%.` });
+  }
+  if (incBase && exp + saveTarget <= incBase) tips.push({ icon: 'target', text: `حوّل <b class="num">${money(saveTarget)}</b> (${savePct}% من دخلك) لحساب التوفير أول الشهر قبل ما تصرف.` });
+  tips.push({ icon: 'bulb', text: SAVING_TIPS[now.getDate() % SAVING_TIPS.length] });
+  return { incBase, remaining, daily, todaySpent, daysLeft, upcoming, tips: tips.slice(0, 4) };
+}
+function planCard(hide) {
+  const p = dailyPlan();
+  if (!p.incBase && !db.txns.length) return '';
+  const pct = p.daily > 0 ? Math.min(100, p.todaySpent / p.daily * 100) : 100;
+  return `<div class="card plan-card">
+    <div class="row between"><h3>اقتراح النهارده</h3><button class="btn small" id="hSpeak">${ic('speaker')} اسمع</button></div>
+    ${p.incBase ? `<div class="daily">
+      <div><span class="muted">تقدر تصرف النهارده</span><b class="num">${hide ? '••••' : money(p.daily)}</b></div>
+      <div><span class="muted">صرفت النهارده</span><b class="num ${p.todaySpent > p.daily ? 'exp' : ''}">${hide ? '••••' : money(p.todaySpent)}</b></div>
+      <div><span class="muted">متبقي للشهر</span><b class="num">${hide ? '••••' : money(Math.max(0, p.remaining))}</b></div>
+    </div>
+    <div class="bar ${pct >= 100 ? 'over' : pct >= 75 ? 'warn' : 'good'}"><i style="width:${pct}%"></i></div>
+    <div class="muted" style="margin:6px 0 10px">باقي ${p.daysLeft} يوم في الشهر · بعد خصم ${db.prefs.savingRate || 20}% ادخار والمدفوعات الجاية</div>` : ''}
+    ${p.tips.map(x => insH(x.icon, x.text, x.w)).join('')}
+  </div>`;
+}
+
+// ================= المساعد الصوتي =================
+function speak(text) {
+  if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const voices = speechSynthesis.getVoices();
+  const v = voices.find(x => /ar[-_]EG/i.test(x.lang)) || voices.find(x => /^ar/i.test(x.lang));
+  if (v) u.voice = v;
+  u.lang = v ? v.lang : 'ar-EG'; u.rate = 1;
+  speechSynthesis.speak(u);
+}
+const NUM_WORDS = { 'واحد': 1, 'واحده': 1, 'اتنين': 2, 'اثنين': 2, 'تلاته': 3, 'ثلاثه': 3, 'اربعه': 4, 'خمسه': 5, 'سته': 6, 'سبعه': 7, 'تمانيه': 8, 'ثمانيه': 8, 'تسعه': 9, 'عشره': 10,
+  'حداشر': 11, 'اتناشر': 12, 'تلتاشر': 13, 'اربعتاشر': 14, 'خمستاشر': 15, 'ستاشر': 16, 'سبعتاشر': 17, 'تمنتاشر': 18, 'تسعتاشر': 19,
+  'عشرين': 20, 'تلاتين': 30, 'ثلاثين': 30, 'اربعين': 40, 'خمسين': 50, 'ستين': 60, 'سبعين': 70, 'تمانين': 80, 'ثمانين': 80, 'تسعين': 90,
+  'ميه': 100, 'مائه': 100, 'مية': 100, 'ميتين': 200, 'مئتين': 200, 'تلتميه': 300, 'ثلاثمائه': 300, 'ربعميه': 400, 'اربعمائه': 400, 'خمسميه': 500, 'خمسمائه': 500,
+  'ستميه': 600, 'سبعميه': 700, 'تمنميه': 800, 'تسعميه': 900, 'نص': .5 };
+function wordsToNumber(t) {
+  let total = 0, cur = 0, found = false;
+  for (let w of t.split(/\s+/)) {
+    w = w.replace(/^و(?=.{2,})/, '').replace(/ة/g, 'ه');
+    if (NUM_WORDS[w] != null) { cur += NUM_WORDS[w]; found = true; }
+    else if (/^(الف|ألف|آلاف|الاف)$/.test(w)) { total += (cur || 1) * 1000; cur = 0; found = true; }
+    else if (/^(الفين|ألفين)$/.test(w)) { total += 2000; found = true; }
+    else if (/^مليون$/.test(w)) { total += (cur || 1) * 1e6; cur = 0; found = true; }
+  }
+  return found ? total + cur : null;
+}
+const VOICE_SYN = { cat_food: ['اكل', 'أكل', 'مطعم', 'مطاعم', 'طعام', 'غدا', 'عشا', 'فطار', 'سوبر ماركت', 'بقاله'], cat_transport: ['مواصلات', 'بنزين', 'اوبر', 'تاكسي', 'عربيه', 'مترو'],
+  cat_bills: ['فاتوره', 'فواتير', 'كهربا', 'كهرباء', 'مياه', 'غاز', 'نت'], cat_shopping: ['تسوق', 'شوبينج', 'مشتريات'], cat_health: ['دكتور', 'دوا', 'علاج', 'صيدليه', 'صحه'],
+  cat_fun: ['خروج', 'سينما', 'ترفيه', 'كافيه', 'قهوه'], cat_telecom: ['رصيد', 'شحن', 'موبايل', 'باقه'], cat_clothes: ['هدوم', 'لبس', 'ملابس', 'جزمه'], cat_rent: ['ايجار', 'إيجار'],
+  cat_edu: ['دروس', 'مدرسه', 'كورس', 'جامعه'], cat_gifts: ['هديه', 'هدايا'], cat_salary: ['مرتب', 'راتب'], cat_bonus: ['مكافأه', 'بونص'] };
+function parseVoice(raw) {
+  const t = normDigits(raw).toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').trim();
+  if (/(^|\s)(كم|كام|قد ايه|اد ايه|بكام|اجمالي)\s/.test(t + ' ') && !/^(صرفت|دفعت|اشتريت)\s+\d/.test(t)) return { question: true, text: raw };
+  const m = /(\d+(?:[.,]\d+)?)/.exec(t.replace(/(\d),(\d{3})/g, '$1$2'));
+  const amount = m ? parseFloat(m[1].replace(',', '.')) : wordsToNumber(t);
+  const income = /(دخل|قبضت|استلمت|اتحولي|اتحول لي|كسبت|جالي|مرتب|راتب|مكافاه)/.test(t) && !/(صرفت|دفعت|اشتريت)/.test(t);
+  let categoryId = null;
+  for (const c of db.categories.filter(c => c.isIncome === income)) {
+    const names = [lbl(c.name), ...(VOICE_SYN[c.name] || [])].map(x => x.toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه'));
+    if (names.some(n => n && new RegExp('(^|\\s|ال|ب|ل)' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(t))) { categoryId = c.id; break; }
+  }
+  const a = db.accounts.find(x => !x.archived && lbl(x.name).length > 1 && t.includes(lbl(x.name).toLowerCase()));
+  const mm = /(?:في|من|عند|لدي|علي)\s+(.+)$/.exec(t);
+  let merchant = mm ? mm[1].replace(/\d+|جنيه|جنيهات|دولار|ريال|ب?الكارت|ب?الفيزا|كاش/g, '').trim() : '';
+  if (categoryId && merchant && [lbl(cat(categoryId).name), ...(VOICE_SYN[cat(categoryId).name] || [])].some(n => merchant.replace(/^ال/, '') === n.replace(/^ال/, ''))) merchant = '';
+  if (!categoryId) categoryId = suggestCategory(merchant || t, income ? 'CREDIT' : 'DEBIT');
+  return { amount, type: income ? 'INCOME' : 'EXPENSE', categoryId, merchant: merchant.slice(0, 40), accountId: a && a.id };
+}
+// ينفّذ الأمر الصوتي ويرجّع الرد اللي هيتقال. الإضافة بتتسجّل مباشرة مع إمكانية التراجع.
+function handleVoice(text) {
+  const t = normDigits(text).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
+  const p = dailyPlan();
+  if (/(فاضل|باقي|متبقي|اقدر اصرف|ممكن اصرف|مسموح)/.test(t)) {
+    if (!p.incBase) return { reply: 'سجّل دخلك الأول عشان أعرف أحسبلك' };
+    return { reply: `فاضلك ${Math.round(Math.max(0, p.remaining))} جنيه للشهر، يعني تقدر تصرف حوالي ${Math.round(p.daily)} في اليوم. صرفت النهارده ${Math.round(p.todaySpent)}.` };
+  }
+  if (/(اقتراح|نصيحه|نصيحة|انصحني|اعمل ايه)/.test(t)) return { reply: p.tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. ') };
+  if (/(رصيدي|رصيد|معايا كام)/.test(t) && !/\d/.test(t)) {
+    const b = balances(); const tot = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(b[a.id] || 0, a.currency), 0);
+    return { reply: `إجمالي رصيدك ${Math.round(tot)} ${base() === 'EGP' ? 'جنيه' : base()}` };
+  }
+  const r = parseVoice(text);
+  if (r.question) { const d = document.createElement('div'); askNl(text, d); return { reply: d.textContent.replace('عرض', '').trim() || 'ماعرفتش أجاوب على ده' }; }
+  if (!(r.amount > 0)) return { reply: 'ماعرفتش المبلغ، قول مثلاً: صرفت 200 أكل' };
+  const accountId = r.accountId || (db.accounts.find(a => !a.archived && a.type !== 'CREDIT') || db.accounts[0] || {}).id;
+  if (!accountId) return { reply: 'أضف حساب الأول' };
+  const id = newId();
+  db.txns.push({ id, type: r.type, amount: r.amount, accountId, categoryId: r.categoryId, merchant: r.merchant, note: 'بالصوت', date: Date.now(), source: 'VOICE' });
+  if (r.categoryId && r.merchant) learn(r.merchant, r.categoryId);
+  save(); render();
+  const c = cat(r.categoryId);
+  return { reply: `سجّلت ${r.type === 'INCOME' ? 'دخل' : 'مصروف'} ${r.amount}${c ? ' على ' + lbl(c.name) : ''}${r.merchant ? ' من ' + r.merchant : ''}`, undoId: id };
+}
+
+// المساعد الصغير العائم: زر مايك صغير، يسمع ويرد في فقاعة صغيرة
+let vRec = null;
+function voiceBubble(state, text, undoId) {
+  const b = $('#vbubble'); b.classList.remove('hidden');
+  b.innerHTML = `<div class="row between"><b>${state}</b><button class="x" id="vbX">✕</button></div>${text ? `<div class="vb-text">${esc(text)}</div>` : ''}${undoId ? '<button class="btn small" id="vbUndo">تراجع</button> <button class="btn small" id="vbEdit">تعديل</button>' : ''}`;
+  $('#vbX').onclick = () => { b.classList.add('hidden'); if (vRec) vRec.abort(); speechSynthesis && speechSynthesis.cancel(); };
+  if (undoId) {
+    $('#vbUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== undoId); save(); render(); voiceBubble('اتلغت', ''); setTimeout(() => b.classList.add('hidden'), 1200); };
+    $('#vbEdit').onclick = () => { b.classList.add('hidden'); openTxn(db.txns.find(x => x.id === undoId)); };
+  }
+}
+function quickVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return openVoice();
+  if (vRec) { vRec.stop(); return; }
+  let heard = '';
+  vRec = new SR(); vRec.lang = 'ar-EG'; vRec.interimResults = true;
+  $('#vfab').classList.add('on'); voiceBubble('بسمعك...', 'قول: صرفت 150 أكل، أو فاضلي كام؟');
+  vRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); voiceBubble('بسمعك...', heard); };
+  vRec.onerror = e => { voiceBubble(e.error === 'not-allowed' ? 'المايك مش مسموح' : 'ماسمعتش كويس', e.error === 'not-allowed' ? 'اسمح بالمايك من إعدادات الآيفون، أو اكتب الأمر' : 'اضغط على المايك وجرّب تاني'); };
+  vRec.onend = () => {
+    vRec = null; $('#vfab').classList.remove('on');
+    if (!heard.trim()) return;
+    const r = handleVoice(heard);
+    voiceBubble('«' + heard + '»', r.reply, r.undoId); speak(r.reply);
+  };
+  try { vRec.start(); } catch (e) { vRec = null; $('#vfab').classList.remove('on'); openVoice(); }
+}
+
+function openVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  sheet('المساعد الصوتي', `
+    <p class="muted">قول مثلاً: «صرفت 150 جنيه أكل من طلبات» أو «قبضت المرتب 25000» أو «كام صرفت على المواصلات الشهر ده».</p>
+    ${SR ? `<button class="mic-big" id="vMic">${ic('mic')}</button><div class="muted" id="vState" style="text-align:center">اضغط واتكلم</div>` : ''}
+    <textarea class="in" id="vText" placeholder="${SR ? 'الكلام هيظهر هنا ويمكنك تعديله' : 'اضغط على المايك في كيبورد الآيفون واتكلم، أو اكتب'}" style="min-height:80px;margin-top:10px"></textarea>
+    <div class="btns"><button class="btn primary" id="vGo">تنفيذ</button><button class="btn" id="vTips">${ic('speaker')} اسمع اقتراح النهارده</button></div>
+    <div id="vOut" style="margin-top:10px"></div>`, () => {
+    const out = $('#vOut');
+    const run = () => {
+      const text = $('#vText').value.trim(); if (!text) return toast('قول أو اكتب حاجة الأول');
+      const r = handleVoice(text);
+      out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '');
+      speak(r.reply);
+      if (r.undoId) $('#vUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== r.undoId); save(); out.innerHTML = insH('alert', 'اتلغت'); };
+      $('#vText').value = '';
+    };
+    $('#vGo').onclick = run;
+    $('#vTips').onclick = () => speak(dailyPlan().tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. '));
+    if (SR) {
+      let rec = null;
+      $('#vMic').onclick = () => {
+        if (rec) { rec.stop(); return; }
+        rec = new SR(); rec.lang = 'ar-EG'; rec.interimResults = true; rec.continuous = false;
+        $('#vMic').classList.add('on'); $('#vState').textContent = 'بسمعك...';
+        rec.onresult = e => { $('#vText').value = [...e.results].map(r => r[0].transcript).join(' '); };
+        rec.onerror = e => { $('#vState').textContent = e.error === 'not-allowed' ? 'اسمح للتطبيق باستخدام المايك من الإعدادات' : 'ماسمعتش كويس، جرّب تاني'; };
+        rec.onend = () => { rec = null; $('#vMic').classList.remove('on'); if ($('#vText').value.trim()) { $('#vState').textContent = 'تمام'; run(); } else if ($('#vState').textContent === 'بسمعك...') $('#vState').textContent = 'اضغط واتكلم'; };
+        try { rec.start(); } catch (e) { rec = null; $('#vMic').classList.remove('on'); }
+      };
+    }
   });
 }
 
@@ -1508,17 +1727,45 @@ function importCsv(text) {
 
 // ================= قفل PIN =================
 async function hashPin(pin) { return b64(await crypto.subtle.digest('SHA-256', enc.encode('mywallet:' + pin))); }
-function openPin() {
-  sheet('قفل PIN', db.prefs.pinHash ? `<p>القفل مفعّل.</p><button class="btn danger block" id="pOff">إلغاء القفل</button>` : `
+// Face ID / Touch ID عبر WebAuthn: مفتاح مرور على الجهاز، والتحقق بيتم بالوجه أو البصمة. الـ PIN يفضل كبديل.
+const bioSupported = async () => { try { return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch (e) { return false; } };
+async function enableBio() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: 'محفظتي' },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'mywallet', displayName: 'محفظتي' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
+    timeout: 60000 } });
+  db.prefs.bioCred = b64(cred.rawId); save();
+}
+async function bioUnlock(silent) {
+  try {
+    await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), allowCredentials: [{ type: 'public-key', id: unb64(db.prefs.bioCred) }], userVerification: 'required', timeout: 60000 } });
+    fails = 0; $('#lock').classList.add('hidden');
+  } catch (e) { if (silent !== true) $('#pinErr').textContent = 'تعذّر التحقق بـ Face ID، استخدم الرمز'; }
+}
+async function openPin() {
+  const bio = await bioSupported();
+  sheet('القفل و Face ID', db.prefs.pinHash ? `
+    <div class="insight"><span class="ib">${ic('lock')}</span><div class="grow">قفل الرمز مفعّل</div></div>
+    ${bio ? (db.prefs.bioCred
+      ? `<div class="insight"><span class="ib">${ic('faceid')}</span><div class="grow">Face ID مفعّل لفتح التطبيق</div></div><button class="btn block" id="bOff">إيقاف Face ID</button>`
+      : `<button class="btn primary block" id="bOn">${ic('faceid')} تفعيل Face ID</button><p class="muted">هتفتح التطبيق بوشّك، والرمز يفضل موجود لو Face ID ماشتغلش.</p>`)
+      : '<p class="muted">Face ID مش متاح هنا. لازم تفتح التطبيق من الشاشة الرئيسية على آيفون فيه Face ID.</p>'}
+    <button class="btn danger block" id="pOff" style="margin-top:10px">إلغاء القفل بالكامل</button>` : `
+    <p class="muted">فعّل رمز PIN الأول، وبعدها تقدر تفعّل Face ID.</p>
     <label class="f">رمز PIN جديد (4 إلى 8 أرقام)</label><input class="in num" id="p1" type="password" inputmode="numeric" maxlength="8">
     <label class="f">تأكيد الرمز</label><input class="in num" id="p2" type="password" inputmode="numeric" maxlength="8">
     <button class="btn primary block" id="pOn" style="margin-top:12px">تفعيل</button>`, () => {
-    if ($('#pOff')) $('#pOff').onclick = () => { db.prefs.pinHash = ''; save(); closeSheet(); toast('تم إلغاء القفل'); };
+    if ($('#pOff')) $('#pOff').onclick = () => { db.prefs.pinHash = ''; db.prefs.bioCred = ''; save(); closeSheet(); toast('تم إلغاء القفل'); };
+    if ($('#bOff')) $('#bOff').onclick = () => { db.prefs.bioCred = ''; save(); openPin(); };
+    if ($('#bOn')) $('#bOn').onclick = async () => { try { await enableBio(); toast('تم تفعيل Face ID'); openPin(); } catch (e) { toast('ماقدرناش نفعّل Face ID'); } };
     if ($('#pOn')) $('#pOn').onclick = async () => {
       const a = normDigits($('#p1').value), b = normDigits($('#p2').value);
       if (!/^\d{4,8}$/.test(a)) return toast('الرمز من 4 إلى 8 أرقام');
       if (a !== b) return toast('الرمزان غير متطابقين');
-      db.prefs.pinHash = await hashPin(a); save(); closeSheet(); toast('تم تفعيل القفل');
+      db.prefs.pinHash = await hashPin(a); save(); toast('تم تفعيل القفل'); openPin();
     };
   });
 }
@@ -1526,7 +1773,9 @@ let fails = 0, blockedUntil = 0;
 function showLock() {
   if (!db.prefs.pinHash) return;
   $('#lock').classList.remove('hidden'); $('#pinIn').value = ''; $('#pinErr').textContent = '';
-  setTimeout(() => $('#pinIn').focus(), 200);
+  const bio = !!db.prefs.bioCred;
+  $('#faceGo').classList.toggle('hidden', !bio);
+  if (bio) bioUnlock(true); else setTimeout(() => $('#pinIn').focus(), 200);
 }
 async function tryUnlock() {
   if (Date.now() < blockedUntil) { $('#pinErr').textContent = 'انتظر قليلاً ثم حاول مرة أخرى'; return; }
@@ -1541,6 +1790,10 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setTab(
 $('#sheetClose').onclick = closeSheet;
 document.querySelector('.sheet-bg').onclick = closeSheet;
 $('#pinGo').onclick = tryUnlock;
+$('#faceGo').onclick = bioUnlock;
+$('#vfab').innerHTML = ic('mic');
+$('#vfab').onclick = quickVoice;
+$('#faceGo').innerHTML = ic('faceid') + '<span>فتح بـ Face ID</span>';
 $('#pinIn').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
 $('#settingsBtn').onclick = openSettings;
 $('#settingsBtn').innerHTML = ic('settings');
