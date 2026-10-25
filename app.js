@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '47';
+const APP_VERSION = '48';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2340,7 +2340,10 @@ function speak(text, onEnd, plain) {
   if (!plain && !speak.dev && (speak.gm || gmOn())) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     const voice = speak.gm; speak.token = (speak.token || 0) + 1;
-    gmSpeak(text, onEnd, voice).catch(e => { console.warn(e); toast(gmError(e)); if (/ 400| 403| 404/.test(String(e.message))) { db.prefs.gmVoice = 'off'; save(); } if (voice) return; speak(text, onEnd, true); });
+    const tk = speak.token; let fell = false;
+    // لو Gemini اتأخر أكتر من 3.5 ثانية، نتكلم بصوت الجهاز على طول
+    const slow = voice ? null : setTimeout(() => { if (speak.token === tk) { fell = true; speak(text, onEnd, true); } }, 3500);
+    gmSpeak(text, () => { clearTimeout(slow); onEnd && onEnd(); }, voice).then(() => clearTimeout(slow), e => { clearTimeout(slow); if (fell) return; throw e; }).catch(e => { console.warn(e); toast(gmError(e)); if (/ 400| 403| 404/.test(String(e.message))) { db.prefs.gmVoice = 'off'; save(); } if (voice) return; speak(text, onEnd, true); });
     return;
   }
   if (azAudio) azAudio.pause();
@@ -2350,7 +2353,9 @@ function speak(text, onEnd, plain) {
   const busy = speechSynthesis.speaking || speechSynthesis.pending;
   if (busy) speechSynthesis.cancel();
   // جمل قصيرة واحدة ورا التانية: الآيفون بيقطّع في الجمل الطويلة
-  const parts = say.replace(/([.؟!])\s+/g, '$1\n').split('\n').map(x => x.trim()).filter(Boolean);
+  // جمل في حدود 200 حرف: أقل فواصل بين الجمل، ومن غير ما الآيفون يقطّع
+  const parts = say.replace(/([.؟!])\s+/g, '$1\n').split('\n').map(x => x.trim()).filter(Boolean)
+    .reduce((a, x) => { if (a.length && (a[a.length - 1] + ' ' + x).length <= 200) a[a.length - 1] += ' ' + x; else a.push(x); return a; }, []);
   const token = speak.token = (speak.token || 0) + 1;
   const go = () => {
     const list = arVoices();
@@ -2368,7 +2373,7 @@ function speak(text, onEnd, plain) {
       if (i >= parts.length) return done();
       const u = new SpeechSynthesisUtterance(parts[i]);
       try { if (v) u.voice = v; } catch (e) { }
-      u.lang = v ? v.lang : 'ar-SA'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1; u.volume = 1;
+      u.lang = v ? v.lang : 'ar-SA'; u.rate = db.prefs.voiceRate || 1; u.pitch = 1; u.volume = 1;
       u.onstart = () => { started = true; };
       u.onend = () => { i++; say1(); };
       u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; if (!started) return fail(); i++; say1(); };
@@ -2450,7 +2455,7 @@ function voiceSettingsHtml() {
     ${db.prefs.voiceOff ? '<div class="insight w"><div class="grow"><b>🔇 صوت المساعد مقفول</b>، عشان كده مش بتسمع حاجة. علّم على الخانة اللي تحت عشان تشغّله.</div></div>' : ''}
     <label class="row"><input type="checkbox" id="stVoiceOn" ${db.prefs.voiceOff ? '' : 'checked'}> المساعد يرد بالصوت (لو قفلته هيرد بالكتابة بس)</label>
     <button class="btn primary block" id="stVoices" style="margin-top:8px">${ic('speaker')} اسمع أمثلة الأصوات واختار (${list.length})</button>
-    <label class="f">السرعة</label><div class="chips">${[[0.8, 'بطيء'], [0.95, 'عادي'], [1.1, 'سريع']].map(([r, t]) => `<button class="chip ${(db.prefs.voiceRate || 0.95) === r ? 'on' : ''}" data-vr="${r}">${t}</button>`).join('')}</div>
+    <label class="f">السرعة</label><div class="chips">${[[0.85, 'بطيء'], [1, 'عادي'], [1.15, 'سريع']].map(([r, t]) => `<button class="chip ${(db.prefs.voiceRate || 1) === r ? 'on' : ''}" data-vr="${r}">${t}</button>`).join('')}</div>
     <button class="btn block" id="stVoiceTest" style="margin-top:8px">${ic('speaker')} جرّب الصوت</button>
     <button class="btn block" id="stVoiceDiag" style="margin-top:8px">🩺 فحص الصوت</button><div id="vDiag"></div>
     <p class="muted">لصوت أوضح على الآيفون: الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، ونزّل صوت «Majed» أو «Laila» بنسخة <b>Enhanced/محسّن</b>، وبعدين اختاره هنا.</p>`;
@@ -2758,7 +2763,7 @@ function micTimers(r) {
   let t = null; const cap = setTimeout(end, 20000);
   const arm = ms => { clearTimeout(t); t = setTimeout(end, ms); };
   arm(6000);
-  return { heard: () => arm(2000), clear: () => { clearTimeout(t); clearTimeout(cap); liveRecs.delete(r); } };
+  return { heard: final => arm(final ? 400 : 1200), clear: () => { clearTimeout(t); clearTimeout(cap); liveRecs.delete(r); } };
 }
 window.addEventListener('pagehide', killMics);
 document.addEventListener('visibilitychange', () => { if (document.hidden) { killMics(); keepAudio(false); try { speechSynthesis.cancel(); } catch (e) { } } });
@@ -2772,7 +2777,7 @@ function quickVoice() {
   vRec = new SR(); vRec.lang = 'ar-EG'; vRec.interimResults = true;
   $('#vfab').classList.add('on'); voiceBubble('بسمعك...', 'قول: صرفت 150 أكل، أو فاضلي كام؟');
   const mt = micTimers(vRec);
-  vRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); voiceBubble('بسمعك...', heard); mt.heard(); };
+  vRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); voiceBubble('بسمعك...', heard); mt.heard(e.results[e.results.length - 1].isFinal); };
   vRec.onerror = e => { voiceBubble(e.error === 'not-allowed' ? 'المايك مش مسموح' : 'ماسمعتش كويس', e.error === 'not-allowed' ? 'اسمح بالمايك من إعدادات الآيفون، أو اكتب الأمر' : 'اضغط على المايك وجرّب تاني'); };
   vRec.onend = () => {
     mt.clear(); vRec = null; $('#vfab').classList.remove('on');
@@ -2780,7 +2785,7 @@ function quickVoice() {
     const r = handleVoice(heard);
     if (r.silent) return;
     if (r.ai) { voiceBubble('«' + heard + '»', 'بفكّر...'); r.ai.then(x => x || 'ماعرفتش').catch(() => 'مافهمتش، جرّب تاني').then(x => { voiceBubble('«' + heard + '»', x); speak(x); }); return; }
-    voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); setTimeout(() => speak(r.reply), 700);
+    voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); setTimeout(() => speak(r.reply), 250);
   };
   try { vRec.start(); } catch (e) { vRec = null; $('#vfab').classList.remove('on'); openVoice(); }
 }
@@ -2809,7 +2814,7 @@ function openVoice() {
       if (r.ai) { out.innerHTML = insH('sparkle', 'بفكّر...'); r.ai.then(x => x || 'ماعرفتش').catch(() => 'مافهمتش، جرّب تاني').then(x => { out.innerHTML = insH('speaker', esc(x)); speak(x); }); $('#vText').value = ''; return; }
       out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '') + (r.go ? `<button class="btn small primary" id="vOpen">افتح ${esc(r.goLabel)}</button>` : '');
       if (r.go) $('#vOpen').onclick = r.go;
-      setTimeout(() => speak(r.reply), 600);
+      setTimeout(() => speak(r.reply), 250);
       if (r.undoId) $('#vUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== r.undoId); save(); out.innerHTML = insH('alert', 'اتلغت'); };
       $('#vText').value = '';
     };
@@ -2822,7 +2827,7 @@ function openVoice() {
         rec = new SR(); rec.lang = 'ar-EG'; rec.interimResults = true; rec.continuous = false;
         $('#vMic').classList.add('on'); $('#vState').textContent = 'بسمعك...';
         const mt = micTimers(rec);
-        rec.onresult = e => { $('#vText').value = [...e.results].map(r => r[0].transcript).join(' '); mt.heard(); };
+        rec.onresult = e => { $('#vText').value = [...e.results].map(r => r[0].transcript).join(' '); mt.heard(e.results[e.results.length - 1].isFinal); };
         rec.onerror = e => { $('#vState').textContent = e.error === 'not-allowed' ? 'اسمح للتطبيق باستخدام المايك من الإعدادات' : 'ماسمعتش كويس، جرّب تاني'; };
         rec.onend = () => { mt.clear(); rec = null; $('#vMic').classList.remove('on'); if ($('#vText').value.trim()) { $('#vState').textContent = 'تمام'; run(); } else if ($('#vState').textContent === 'بسمعك...') $('#vState').textContent = 'اضغط واتكلم'; };
         try { rec.start(); } catch (e) { rec = null; $('#vMic').classList.remove('on'); }
@@ -2873,7 +2878,8 @@ function openChat(listen) {
     }
     const m = add(false, r.reply, { undo: r.undoId || null, goLabel: r.goLabel || '' });
     if (r.go) { chatGo.set(m.id, r.go); draw(); }
-    speak(r.reply);
+    // بعد المايك الآيفون محتاج لحظة صغيرة عشان الصوت يتحوّل للسماعة
+    if (byVoice) setTimeout(() => speak(r.reply), 250); else speak(r.reply);
   };
   const fit = () => { const t = $('#cIn'); t.style.height = 'auto'; t.style.height = Math.min(120, t.scrollHeight) + 'px'; };
   $('#cIn').oninput = fit;
@@ -2890,10 +2896,10 @@ function openChat(listen) {
     chatRec = new SR(); chatRec.lang = 'ar-EG'; chatRec.interimResults = true;
     const mt = micTimers(chatRec);
     $('#cMic').classList.add('on'); $('#cSt').textContent = 'بسمعك...'; $('#cHint').textContent = 'بسمعك... اتكلم (دوس تاني للإيقاف)';
-    chatRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); $('#cIn').value = heard; fit(); mt.heard(); };
+    chatRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); $('#cIn').value = heard; fit(); mt.heard(e.results[e.results.length - 1].isFinal); };
     chatRec.onerror = e => { $('#cSt').textContent = e.error === 'not-allowed' ? 'اسمح بالمايك من إعدادات الآيفون' : 'ماسمعتش كويس'; };
     chatRec.onend = () => { mt.clear(); chatRec = null; const b = $('#cMic'); if (!b) return; b.classList.remove('on'); $('#cHint').textContent = 'دوس واتكلم';
-      if (heard.trim()) { $('#cSt').textContent = 'اكتب أو اتكلم'; setTimeout(() => send(heard, true), 500); } else if ($('#cSt').textContent === 'بسمعك...') $('#cSt').textContent = 'ماسمعتش حاجة، دوس على المايك تاني'; };
+      if (heard.trim()) { $('#cSt').textContent = 'اكتب أو اتكلم'; send(heard, true); } else if ($('#cSt').textContent === 'بسمعك...') $('#cSt').textContent = 'ماسمعتش حاجة، دوس على المايك تاني'; };
     try { chatRec.start(); } catch (e) { chatRec = null; $('#cMic').classList.remove('on'); }
   };
   draw();
@@ -3565,6 +3571,7 @@ async function checkReminder() {
 setInterval(checkNotifs, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNotifs(); });
 
+if (!db.prefs.voiceFix48) { db.prefs.voiceFix48 = true; if (db.prefs.voiceRate === 0.95 || db.prefs.voiceRate === 0.8 || db.prefs.voiceRate === 1.1) db.prefs.voiceRate = { 0.95: 1, 0.8: 0.85, 1.1: 1.15 }[db.prefs.voiceRate]; save(); }
 if (!db.prefs.voiceFix39) { db.prefs.voiceFix39 = true; db.prefs.voiceOff = false; if (db.prefs.gmVoice && !db.prefs.gmKey) db.prefs.gmVoice = 'off'; save(); }
 showLock();
 runRecurring();
