@@ -13,7 +13,7 @@ const LABELS = {
   cat_other_inc: 'إيرادات أخرى', cat_installments: 'أقساط', acc_cash: 'نقدي'
 };
 const ACC_TYPES = { BANK: 'بنك', CASH: 'نقدي', CREDIT: 'بطاقة ائتمان', SAVING: 'توفير', GOLD: 'ذهب', WALLET: 'محفظة إلكترونية' };
-const ACC_ICONS = { BANK: '🏦', CASH: '💵', CREDIT: '💳', SAVING: '🐷', GOLD: '🪙', WALLET: '📲' };
+const ACC_ICONS = { BANK: '🏦', CASH: '💵', CREDIT: '💳', SAVING: '💰', GOLD: '🪙', WALLET: '📲' };
 // تصنيف المصروفات لقاعدة 50/30/20: احتياجات أساسية أو رغبات
 const NEED_CATS = new Set(['cat_food', 'cat_transport', 'cat_bills', 'cat_rent', 'cat_health', 'cat_edu', 'cat_telecom', 'cat_family', 'cat_installments']);
 const catGroup = c => c.group || (NEED_CATS.has(c.name) ? 'NEED' : 'WANT');
@@ -440,7 +440,7 @@ function renderHome() {
       <div class="hero-stats">
         <div><span class="muted">⬇️ دخل الشهر</span><b class="num">${money(inc)}</b></div>
         <div><span class="muted">⬆️ مصروف الشهر</span><b class="num">${money(exp)}</b></div>
-        <div><span class="muted">🐷 نسبة الادخار</span><b class="num">${savedPct == null ? '—' : savedPct.toFixed(0) + '%'}</b></div>
+        <div><span class="muted">💰 نسبة الادخار</span><b class="num">${savedPct == null ? '—' : savedPct.toFixed(0) + '%'}</b></div>
       </div>
     </div>
     <div class="quick">
@@ -448,7 +448,7 @@ function renderHome() {
       <button data-q="inc"><span class="qi green">➕</span>دخل</button>
       <button data-q="sms"><span class="qi blue">✉️</span>رسالة بنك${pending ? `<i class="badge">${pending}</i>` : ''}</button>
       <button data-q="cards"><span class="qi purple">💳</span>البطاقات</button>
-      <button data-q="savings"><span class="qi amber">🐷</span>الادخار</button>
+      <button data-q="savings"><span class="qi amber">💰</span>الادخار</button>
     </div>
     ${ins.length ? `<div class="card"><h3>🤖 رؤى ذكية</h3>${ins.join('')}</div>` : ''}
     <div class="card"><div class="row between"><h3>الحسابات</h3><button class="btn small" id="hAcc">إدارة</button></div>
@@ -594,7 +594,7 @@ function renderMore() {
     ['الفلوس', [
       ['🏦', 'الحسابات', 'بنوك، نقدي، توفير، ذهب', openAccounts],
       ['💳', 'بطاقات الائتمان والتقسيط', 'الحد المستخدم، مواعيد السداد، جدول الأقساط', () => setTab('cards')],
-      ['🐷', 'الادخار', 'قاعدة 50/30/20، صندوق الطوارئ، خطة الأهداف', () => setTab('savings')],
+      ['💰', 'الادخار', 'قاعدة 50/30/20، صندوق الطوارئ، خطة الأهداف', () => setTab('savings')],
       ['🎯', 'الأهداف', 'أهداف الادخار', openGoals],
       ['🤝', 'الديون والقروض', 'أقرضت / اقترضت وسداد جزئي', openDebts]]],
     ['التنظيم', [
@@ -812,7 +812,7 @@ function renderSavings() {
       <p class="muted" style="margin-top:0">قسّم دخلك: 50% احتياجات أساسية، 30% رغبات، 20% ادخار.</p>
       <div class="rule"><div class="row between"><span>🏠 احتياجات</span><span class="num">${money(needs)} <small class="muted">من ${money(incBase * .5)}</small></span></div>${bar(needs, 50, needs > incBase * .5 ? 'over' : '')}</div>
       <div class="rule"><div class="row between"><span>🎉 رغبات</span><span class="num">${money(wants)} <small class="muted">من ${money(incBase * .3)}</small></span></div>${bar(wants, 30, wants > incBase * .3 ? 'over' : '')}</div>
-      <div class="rule"><div class="row between"><span>🐷 ادخار</span><span class="num">${money(Math.max(0, saved))} <small class="muted">من ${money(incBase * target / 100)}</small></span></div>${bar(Math.max(0, saved), target, 'good')}</div>
+      <div class="rule"><div class="row between"><span>💰 ادخار</span><span class="num">${money(Math.max(0, saved))} <small class="muted">من ${money(incBase * target / 100)}</small></span></div>${bar(Math.max(0, saved), target, 'good')}</div>
       <p class="muted">تقدر تغيّر نوع أي تصنيف (احتياج أو رغبة) من «التصنيفات».</p>
     </div>
     <div class="card"><h3>🛟 صندوق الطوارئ</h3>
