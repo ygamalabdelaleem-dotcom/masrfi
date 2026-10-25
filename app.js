@@ -1814,6 +1814,15 @@ function pcmToWav(b64, rate = 24000) {
   new Uint8Array(buf, 44).set(pcm);
   return new Blob([buf], { type: 'audio/wav' });
 }
+function gmError(e) {
+  const m = String(e.message || e);
+  if (/ 400| 403/.test(m)) return 'مفتاح Gemini مش شغال. اتأكد إنك نسخته صح';
+  if (/ 429/.test(m)) return 'خلص الحد المجاني لـ Gemini النهارده';
+  if (/ 404/.test(m)) return 'موديل الصوت مش متاح على المفتاح ده';
+  if (/fetch|network|Load failed/i.test(m)) return 'مفيش نت أو جوجل مش راد';
+  if (/play|NotAllowed/i.test(m)) return 'الآيفون منع تشغيل الصوت، اضغط على الشاشة وجرّب تاني';
+  return 'صوت Gemini ماشتغلش: ' + m;
+}
 async function gmSpeak(text, onEnd, voice) {
   const say = speechText(text, true); if (!say) return;
   const v = voice || db.prefs.gmVoice || 'Kore';
@@ -1854,7 +1863,7 @@ function speak(text, onEnd, plain) {
   if (!plain && (speak.gm || (gmOn() && !speak.az))) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     const voice = speak.gm; speak.token = (speak.token || 0) + 1;
-    gmSpeak(text, onEnd, voice).catch(e => { console.warn(e); if (voice) toast('صوت Gemini ماشتغلش (' + e.message + '): اتأكد من المفتاح والنت'); else if (azOn()) { speak.az = db.prefs.azVoice; speak(text, onEnd); speak.az = null; } else speak(text, onEnd, true); });
+    gmSpeak(text, onEnd, voice).catch(e => { console.warn(e); toast(gmError(e)); if (voice) return; else if (azOn()) { speak.az = db.prefs.azVoice; speak(text, onEnd); speak.az = null; } else speak(text, onEnd, true); });
     return;
   }
   if (!plain && (azOn() || speak.az)) {
@@ -1874,7 +1883,10 @@ function speak(text, onEnd, plain) {
   const token = speak.token = (speak.token || 0) + 1;
   setTimeout(() => {
     const list = arVoices();
-    const v = plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI)) || list[0];
+    // الآيفون لو مفيش صوت محدد بيقرا بالصوت الإنجليزي الافتراضي، فلازم صوت عربي دايماً
+    if (!list.length && !speak.waited) { speak.waited = true; setTimeout(() => speak(text, onEnd, plain), 700); return; }
+    const v = (plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI))) || list[0];
+    if (!v) { toast('مفيش صوت عربي على الجهاز. نزّل صوت عربي من إعدادات الآيفون'); return; }
     let i = 0;
     const next = () => {
       if (token !== speak.token) return;
@@ -1883,7 +1895,7 @@ function speak(text, onEnd, plain) {
       try { if (v) u.voice = v; } catch (e) { }
       u.lang = v ? v.lang : 'ar-SA'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1; u.volume = 1;
       u.onend = next;
-      u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; if (!plain && i === 1) { speak.token++; speak(text, onEnd, true); } else next(); };
+      u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; next(); };
       curUtter = u; // لازم نحتفظ بيه وإلا الآيفون ممكن يمسحه قبل ما يخلص
       speechSynthesis.speak(u);
     };
