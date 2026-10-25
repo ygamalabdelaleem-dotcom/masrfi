@@ -13,6 +13,9 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
 <script>try { var t = JSON.parse(localStorage.getItem('mywallet.v1')).prefs.theme; if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
@@ -31,18 +34,18 @@
 <header class="top">
   <button id="back" class="back hidden" aria-label="رجوع">›</button>
   <h1 id="title">محفظتي</h1>
-  <button id="themeBtn" class="icon-btn" aria-label="الوضع الليلي">🌙</button>
+  <button id="themeBtn" class="icon-btn" aria-label="الوضع الليلي"></button>
   <button id="settingsBtn" class="icon-btn" aria-label="الإعدادات">⚙️</button>
 </header>
 
 <main id="view"></main>
 
 <nav class="tabs">
-  <button data-tab="home" class="on"><span>🏠</span>الرئيسية</button>
-  <button data-tab="txns"><span>📋</span>الحركات</button>
-  <button data-tab="add" class="add"><span>＋</span></button>
-  <button data-tab="reports"><span>📊</span>التقارير</button>
-  <button data-tab="more"><span>⚙️</span>المزيد</button>
+  <button data-tab="home" class="on"><span></span>الرئيسية</button>
+  <button data-tab="txns"><span></span>الحركات</button>
+  <button data-tab="add" class="add" aria-label="إضافة حركة"><span></span></button>
+  <button data-tab="reports"><span></span>التقارير</button>
+  <button data-tab="more"><span></span>المزيد</button>
 </nav>
 
 <div id="sheet" class="sheet hidden">

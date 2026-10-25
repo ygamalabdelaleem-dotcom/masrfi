@@ -13,7 +13,51 @@ const LABELS = {
   cat_other_inc: 'إيرادات أخرى', cat_installments: 'أقساط', acc_cash: 'نقدي'
 };
 const ACC_TYPES = { BANK: 'بنك', CASH: 'نقدي', CREDIT: 'بطاقة ائتمان', SAVING: 'توفير', GOLD: 'ذهب', WALLET: 'محفظة إلكترونية' };
-const ACC_ICONS = { BANK: '🏦', CASH: '💵', CREDIT: '💳', SAVING: '💰', GOLD: '🪙', WALLET: '📲' };
+// أيقونات خطية (SVG) بنفس الستايل في كل التطبيق
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+  list: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  chart: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  back: '<path d="m9 6 6 6-6 6"/>',
+  chevron: '<path d="m15 6-6 6 6 6"/>',
+  up: '<path d="M7 17 17 7M8 7h9v9"/>',
+  down: '<path d="M17 7 7 17M16 17H7V8"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  card: '<rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20M6 15h4"/>',
+  coins: '<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.3 18M7 6h1v4M16.7 13.9l.7.7-2.8 2.8"/>',
+  bank: '<path d="M3 21h18M5 21v-9M19 21v-9M9.5 21v-9M14.5 21v-9M2 10l10-6 10 6z"/>',
+  cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+  wallet: '<path d="M19 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v3M21 16v3a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V6"/><path d="M17 12h4v4h-4a2 2 0 0 1 0-4z"/>',
+  gem: '<path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M12 21 8.5 9 12 3l3.5 6L12 21"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  transfer: '<path d="m17 3 4 4-4 4M21 7H7M7 21l-4-4 4-4M3 17h14"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a2 2 0 0 0 3.4 0"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="m3 3 18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.6 8.5 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2.5"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  users: '<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M16 3.1a4 4 0 0 1 0 7.8M21 21v-2a4 4 0 0 0-3-3.9"/>',
+  split: '<path d="M16 3h5v5M8 3H3v5M12 22v-8.3a4 4 0 0 0-1.2-2.9L3 3M15 9l6-6"/>',
+  currency: '<circle cx="12" cy="12" r="9"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5M12 6v2M12 16v2"/>',
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  install: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3"/>',
+  report: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 17v-3M12 17v-6M16 17v-4"/>',
+  sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+};
+const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+const ACC_ICONS = { BANK: 'bank', CASH: 'cash', CREDIT: 'card', SAVING: 'coins', GOLD: 'gem', WALLET: 'phone' };
+const accIcon = a => ic(ACC_ICONS[a.type] || 'wallet');
 // تصنيف المصروفات لقاعدة 50/30/20: احتياجات أساسية أو رغبات
 const NEED_CATS = new Set(['cat_food', 'cat_transport', 'cat_bills', 'cat_rent', 'cat_health', 'cat_edu', 'cat_telecom', 'cat_family', 'cat_installments']);
 const catGroup = c => c.group || (NEED_CATS.has(c.name) ? 'NEED' : 'WANT');
@@ -378,7 +422,7 @@ function txRow(t) {
   const cur = a ? a.currency : base();
   let icon = c ? c.icon : '📦', title = t.merchant || (c ? lbl(c.name) : 'بدون تصنيف'), cls = 'exp', sign = '-';
   if (t.type === 'INCOME') { cls = 'inc'; sign = '+'; }
-  if (t.type === 'TRANSFER') { icon = '🔁'; cls = ''; sign = ''; title = t.merchant || `تحويل إلى ${lbl((acc(t.toAccountId) || {}).name || '')}`; }
+  if (t.type === 'TRANSFER') { icon = ic('transfer'); cls = ''; sign = ''; title = t.merchant || `تحويل إلى ${lbl((acc(t.toAccountId) || {}).name || '')}`; }
   return `<div class="item" data-tx="${t.id}">
     <div class="ico">${icon}</div>
     <div class="grow"><div class="ellipsis">${esc(title)}</div><div class="muted ellipsis">${esc(lbl(a ? a.name : ''))} · ${ltr(fmtDT(t.date))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
@@ -389,6 +433,7 @@ function bindTxRows(root) {
   root.querySelectorAll('[data-tx]').forEach(el => el.onclick = () => openTxn(db.txns.find(t => t.id === +el.dataset.tx)));
 }
 
+const insH = (i, h, w) => `<div class="insight ${w ? 'w' : ''}"><span class="ib">${ic(i)}</span><div class="grow">${h}</div></div>`;
 function renderHome() {
   const bal = balances();
   const total = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(bal[a.id] || 0, a.currency), 0);
@@ -403,24 +448,24 @@ function renderHome() {
   const now = new Date(); const day = now.getDate(); const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   if (day >= 3 && exp > 0) {
     const fc = exp / day * days;
-    ins.push(`<div class="insight">📈 المتوقع صرفه حتى نهاية الشهر: <b class="num">${money(fc)}</b> ${base()}</div>`);
-    if (lastExp > 0) { const p = (fc - lastExp) / lastExp * 100; ins.push(`<div class="insight ${p > 0 ? 'w' : ''}">${p > 0 ? '🔺' : '🔻'} ${p > 0 ? 'أعلى' : 'أقل'} من الشهر الماضي بنسبة ${Math.abs(p).toFixed(0)}%</div>`); }
+    ins.push(insH('chart', `المتوقع صرفه حتى نهاية الشهر: <b class="num">${money(fc)}</b> ${base()}`));
+    if (lastExp > 0) { const p = (fc - lastExp) / lastExp * 100; ins.push(insH(p > 0 ? 'up' : 'down', `${p > 0 ? 'أعلى' : 'أقل'} من الشهر الماضي بنسبة ${Math.abs(p).toFixed(0)}%`, p > 0)); }
   }
   const topId = Object.keys(cats).filter(k => +k > 0).sort((a, b) => cats[b] - cats[a])[0];
-  if (topId && exp > 0) ins.push(`<div class="insight">🏷️ أكثر تصنيف صرفاً: ${esc(lbl(cat(+topId).name))} (${(cats[topId] / exp * 100).toFixed(0)}%)</div>`);
+  if (topId && exp > 0) ins.push(insH('tag', `أكثر تصنيف صرفاً: ${esc(lbl(cat(+topId).name))} (${(cats[topId] / exp * 100).toFixed(0)}%)`));
   db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome).forEach(c => {
     const s = cats[c.id] || 0; const p = s / c.monthlyBudget * 100;
-    if (p >= 80) ins.push(`<div class="insight w">⚠️ ميزانية ${esc(lbl(c.name))}: استهلكت ${p.toFixed(0)}%</div>`);
+    if (p >= 80) ins.push(insH('alert', `ميزانية ${esc(lbl(c.name))}: استهلكت ${p.toFixed(0)}%`, true));
   });
   const due = db.debts.filter(d => d.dueDate && d.paid < d.amount && d.dueDate - Date.now() < 3 * DAY).length;
-  if (due) ins.push(`<div class="insight w">⏰ لديك ${due} دين مستحق قريباً</div>`);
+  if (due) ins.push(insH('users', `لديك ${due} دين مستحق قريباً`, true));
   db.accounts.filter(a => a.type === 'CREDIT' && !a.archived && a.dueDay).forEach(a => {
     const owed = -(bal[a.id] || 0); const left = daysUntilDay(a.dueDay);
-    if (owed > 0 && left <= 5) ins.push(`<div class="insight w">💳 موعد سداد ${esc(lbl(a.name))} بعد ${left === 0 ? 'النهارده' : left + ' يوم'}: <b class="num">${money(owed)}</b> ${a.currency}</div>`);
+    if (owed > 0 && left <= 5) ins.push(insH('card', `موعد سداد ${esc(lbl(a.name))} بعد ${left === 0 ? 'النهارده' : left + ' يوم'}: <b class="num">${money(owed)}</b> ${a.currency}`, true));
   });
   db.installments.forEach(p => {
     const n = nextInstallment(p);
-    if (n && n.date - Date.now() < 3 * DAY) ins.push(`<div class="insight w">📅 قسط «${esc(p.name)}» مستحق ${ltr(fmtDate(n.date))}: <b class="num">${money(n.payment)}</b></div>`);
+    if (n && n.date - Date.now() < 3 * DAY) ins.push(insH('calendar', `قسط «${esc(p.name)}» مستحق ${ltr(fmtDate(n.date))}: <b class="num">${money(n.payment)}</b>`, true));
   });
   const savedPct = inc > 0 ? (inc - exp) / inc * 100 : null;
   const pending = db.inbox.filter(m => m.status === 'PENDING').length;
@@ -432,36 +477,47 @@ function renderHome() {
   const budgets = db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome);
   const gold = goldPrices();
 
+  const hide = !!db.prefs.hideBal;
+  const m = v => hide ? '••••' : money(v);
+  const hr = new Date().getHours();
+  const greet = hr < 12 ? 'صباح الخير' : 'مساء الخير';
+  const expPct = inc > 0 ? Math.min(100, exp / inc * 100) : (exp > 0 ? 100 : 0);
+  const tiles = [['exp', 'up', 'مصروف'], ['inc', 'down', 'دخل'], ['tr', 'transfer', 'تحويل'], ['sms', 'mail', 'رسائل البنك', pending],
+    ['cards', 'card', 'البطاقات'], ['savings', 'coins', 'الادخار'], ['rep', 'chart', 'التقارير'], ['plans', 'calendar', 'الأقساط']];
   view().innerHTML = `
-    ${showReminder ? `<div class="card reminder"><div class="row"><span style="font-size:26px">⏰</span><div class="grow"><b>ماسجّلتش مصاريف النهارده</b><div class="muted">سجّلها دلوقتي عشان تفضل حساباتك مظبوطة</div></div><button class="btn small primary" id="hRem">إضافة</button></div></div>` : ''}
-    <div class="card hero">
-      <div class="muted">صافي الرصيد (${base()})</div>
-      <div class="big">${money(total)}</div>
-      <div class="hero-stats">
-        <div><span class="muted">⬇️ دخل الشهر</span><b class="num">${money(inc)}</b></div>
-        <div><span class="muted">⬆️ مصروف الشهر</span><b class="num">${money(exp)}</b></div>
-        <div><span class="muted">💰 نسبة الادخار</span><b class="num">${savedPct == null ? '—' : savedPct.toFixed(0) + '%'}</b></div>
+    <section class="band">
+      <div class="greet">${greet}</div>
+      <div class="bal-row">
+        <div><div class="label">إجمالي الرصيد</div><div class="big num">${m(total)} <small>${base()}</small></div></div>
+        <button class="eye" id="hEye" aria-label="إظهار أو إخفاء الرصيد">${ic(hide ? 'eyeOff' : 'eye')}</button>
       </div>
+      <div class="acc-scroll">${db.accounts.filter(a => !a.archived).map(a => `<button class="acc-card ${a.type === 'CREDIT' ? 'credit' : ''}" data-acc="${a.id}">
+        <div class="row between"><span class="acc-ic">${accIcon(a)}</span><span class="acc-type">${ACC_TYPES[a.type] || ''}</span></div>
+        <div class="acc-name ellipsis">${esc(lbl(a.name))}</div>
+        <div class="acc-no num">${a.last4 ? '•••• ' + esc(a.last4) : '&nbsp;'}</div>
+        <div class="acc-bal num">${m(bal[a.id] || 0)} <small>${a.currency}</small></div>
+      </button>`).join('')}<button class="acc-card add" id="hAcc">${ic('plus')}<span>إدارة الحسابات</span></button></div>
+    </section>
+    <div class="card tiles">${tiles.map(([k, i, t, b]) => `<button data-q="${k}"><span class="ti">${ic(i)}</span><span>${t}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</div>
+    ${showReminder ? `<div class="card reminder"><div class="row"><span class="ib warn">${ic('bell')}</span><div class="grow"><b>ماسجّلتش مصاريف النهارده</b><div class="muted">سجّلها دلوقتي عشان تفضل حساباتك مظبوطة</div></div><button class="btn small primary" id="hRem">إضافة</button></div></div>` : ''}
+    <div class="card">
+      <div class="row between"><h3>ملخص الشهر</h3><span class="muted">${new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</span></div>
+      <div class="sum3">
+        <div><span class="dot inc-bg"></span><span class="muted">الدخل</span><b class="num">${m(inc)}</b></div>
+        <div><span class="dot exp-bg"></span><span class="muted">المصروف</span><b class="num">${m(exp)}</b></div>
+        <div><span class="dot pri-bg"></span><span class="muted">الادخار</span><b class="num">${savedPct == null ? '—' : savedPct.toFixed(0) + '%'}</b></div>
+      </div>
+      <div class="bar ${expPct >= 90 ? 'over' : expPct >= 70 ? 'warn' : ''}" style="height:10px"><i style="width:${expPct}%"></i></div>
+      <div class="muted" style="margin-top:6px">${inc > 0 ? `صرفت ${expPct.toFixed(0)}% من دخلك الشهر ده` : 'سجّل دخلك عشان تشوف نسبة الصرف'}</div>
     </div>
-    <div class="quick">
-      <button data-q="exp"><span class="qi red">➖</span>مصروف</button>
-      <button data-q="inc"><span class="qi green">➕</span>دخل</button>
-      <button data-q="sms"><span class="qi blue">✉️</span>رسالة بنك${pending ? `<i class="badge">${pending}</i>` : ''}</button>
-      <button data-q="cards"><span class="qi purple">💳</span>البطاقات</button>
-      <button data-q="savings"><span class="qi amber">💰</span>الادخار</button>
-    </div>
-    ${ins.length ? `<div class="card"><h3>🤖 رؤى ذكية</h3>${ins.join('')}</div>` : ''}
-    <div class="card"><div class="row between"><h3>الحسابات</h3><button class="btn small" id="hAcc">إدارة</button></div>
-      <div class="list">${db.accounts.filter(a => !a.archived).map(a => `<div class="item"><div class="ico">${ACC_ICONS[a.type] || '💳'}</div>
-      <div class="grow ellipsis">${esc(lbl(a.name))}${a.last4 ? ` <span class="muted">••${esc(a.last4)}</span>` : ''}</div>
-      <div class="num">${money(bal[a.id] || 0)} <small class="muted">${a.currency}</small></div></div>`).join('')}</div></div>
+    ${ins.length ? `<div class="card"><h3>رؤى ذكية</h3>${ins.join('')}</div>` : ''}
     ${budgets.length ? `<div class="card"><h3>الميزانيات</h3>${budgets.map(c => { const s = cats[c.id] || 0; const p = s / c.monthlyBudget * 100;
       return `<div style="margin-bottom:10px"><div class="row between"><span>${c.icon} ${esc(lbl(c.name))}</span><span class="num muted">${money(s)} / ${money(c.monthlyBudget)}</span></div>
       <div class="bar ${p >= 100 ? 'over' : p >= 80 ? 'warn' : ''}"><i style="width:${Math.min(100, p)}%"></i></div></div>`; }).join('')}</div>` : ''}
     ${db.goals.length ? `<div class="card"><h3>الأهداف</h3>${db.goals.map(g => { const p = g.target ? g.saved / g.target * 100 : 0;
       return `<div style="margin-bottom:10px"><div class="row between"><span>${g.icon} ${esc(g.name)}</span><span class="num muted">${money(g.saved)} / ${money(g.target)} ${g.currency}</span></div>
       <div class="bar"><i style="width:${Math.min(100, p)}%"></i></div></div>`; }).join('')}</div>` : ''}
-    ${gold ? `<div class="card"><h3>🪙 سعر الذهب (${base()} للجرام)</h3><div class="grid2">
+    ${gold ? `<div class="card"><h3>سعر الذهب (${base()} للجرام)</h3><div class="grid2">
       <div>عيار 24<br><b class="num">${money(gold.k24)}</b></div><div>عيار 21<br><b class="num">${money(gold.k21)}</b></div>
       <div>عيار 18<br><b class="num">${money(gold.k18)}</b></div><div>الجنيه الذهب<br><b class="num">${money(gold.pound)}</b></div></div></div>` : ''}
     <div class="card"><div class="row between"><h3>آخر الحركات</h3><button class="btn small" id="hAll">الكل</button></div>
@@ -470,8 +526,15 @@ function renderHome() {
   $('#hAcc').onclick = openAccounts;
   $('#hAll').onclick = () => setTab('txns');
   if ($('#hRem')) $('#hRem').onclick = () => openTxn();
-  const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), sms: () => setTab('inbox'), cards: () => setTab('cards'), savings: () => setTab('savings') };
+  const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), tr: () => openTxn(null, { type: 'TRANSFER' }), sms: () => setTab('inbox'),
+    cards: () => setTab('cards'), savings: () => setTab('savings'), rep: () => setTab('reports'), plans: () => setTab('cards') };
   view().querySelectorAll('[data-q]').forEach(b => b.onclick = qa[b.dataset.q]);
+  $('#hEye').onclick = () => { db.prefs.hideBal = !db.prefs.hideBal; save(); renderHome(); };
+  view().querySelectorAll('[data-acc]').forEach(b => b.onclick = () => {
+    const a = acc(+b.dataset.acc);
+    if (a.type === 'CREDIT') return setTab('cards');
+    filter = { q: '', type: '', accountId: a.id, categoryId: 0, period: 'ALL' }; setTab('txns');
+  });
   bindTxRows(view());
 }
 
@@ -545,7 +608,7 @@ function renderReports() {
       <div class="row muted" style="margin-top:6px;gap:14px"><span><span class="inc">■</span> دخل</span><span><span class="exp">■</span> مصروف</span></div>
     </div>
     ${top.length ? `<div class="card"><h3>أكبر المصروفات</h3><div class="list">${top.map(txRow).join('')}</div></div>` : ''}
-    <div class="card"><h3>🧠 اسأل عن مصروفاتك</h3>
+    <div class="card"><h3>اسأل عن مصروفاتك</h3>
       <input class="in" id="nl" placeholder="مثال: كم صرفت على المطاعم الشهر الماضي">
       <div id="nlOut" style="margin-top:8px"></div>
     </div>
@@ -592,27 +655,27 @@ function askNl(text) {
 function renderMore() {
   const groups = [
     ['الفلوس', [
-      ['🏦', 'الحسابات', 'بنوك، نقدي، توفير، ذهب', openAccounts],
-      ['💳', 'بطاقات الائتمان والتقسيط', 'الحد المستخدم، مواعيد السداد، جدول الأقساط', () => setTab('cards')],
-      ['💰', 'الادخار', 'قاعدة 50/30/20، صندوق الطوارئ، خطة الأهداف', () => setTab('savings')],
-      ['🎯', 'الأهداف', 'أهداف الادخار', openGoals],
-      ['🤝', 'الديون والقروض', 'أقرضت / اقترضت وسداد جزئي', openDebts]]],
+      ['bank', 'الحسابات', 'بنوك، نقدي، توفير، ذهب', openAccounts],
+      ['card', 'بطاقات الائتمان والتقسيط', 'الحد المستخدم، مواعيد السداد، جدول الأقساط', () => setTab('cards')],
+      ['coins', 'الادخار', 'قاعدة 50/30/20، صندوق الطوارئ، خطة الأهداف', () => setTab('savings')],
+      ['target', 'الأهداف', 'أهداف الادخار', openGoals],
+      ['users', 'الديون والقروض', 'أقرضت / اقترضت وسداد جزئي', openDebts]]],
     ['التنظيم', [
-      ['✉️', 'رسائل البنك', 'لصق أو استيراد الرسائل وربطها تلقائياً', () => setTab('inbox')],
-      ['🏷️', 'التصنيفات والميزانيات', 'ميزانية كل تصنيف ونوعه (احتياج/رغبة)', openCategories],
-      ['🔁', 'المعاملات المتكررة', 'إيجار، اشتراكات، راتب...', openRecurring],
-      ['🍕', 'تقسيم فاتورة', 'سجّل نصيبك فقط كمصروف', openSplit]]],
+      ['mail', 'رسائل البنك', 'لصق أو استيراد الرسائل وربطها تلقائياً', () => setTab('inbox')],
+      ['tag', 'التصنيفات والميزانيات', 'ميزانية كل تصنيف ونوعه (احتياج/رغبة)', openCategories],
+      ['repeat', 'المعاملات المتكررة', 'إيجار، اشتراكات، راتب...', openRecurring],
+      ['split', 'تقسيم فاتورة', 'سجّل نصيبك فقط كمصروف', openSplit]]],
     ['البيانات والإعدادات', [
-      ['⚙️', 'الإعدادات', 'التذكير اليومي، الرسائل، ساعة أبل', openSettings],
-      ['💱', 'العملة وأسعار الصرف والذهب', `العملة الأساسية: ${base()}`, openRates],
-      ['💾', 'نسخ احتياطي واستعادة', 'حفظ بياناتك في ملف (iCloud Drive أو الملفات)', openBackup],
-      ['📤', 'تصدير الحركات (Excel/CSV)', 'كل الحركات في ملف واحد', exportCsv],
-      ['🔒', 'قفل PIN', db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل', openPin],
-      ['📲', 'التثبيت على الآيفون', 'إضافة التطبيق للشاشة الرئيسية', () => $('#iosHint').classList.remove('hidden')]]]
+      ['settings', 'الإعدادات', 'التذكير اليومي، الرسائل، ساعة أبل', openSettings],
+      ['currency', 'العملة وأسعار الصرف والذهب', `العملة الأساسية: ${base()}`, openRates],
+      ['save', 'نسخ احتياطي واستعادة', 'حفظ بياناتك في ملف (iCloud Drive أو الملفات)', openBackup],
+      ['upload', 'تصدير الحركات (Excel/CSV)', 'كل الحركات في ملف واحد', exportCsv],
+      ['lock', 'قفل PIN', db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل', openPin],
+      ['install', 'التثبيت على الآيفون', 'إضافة التطبيق للشاشة الرئيسية', () => $('#iosHint').classList.remove('hidden')]]]
   ];
   const items = groups.flatMap(g => g[1]);
   let n = 0;
-  view().innerHTML = groups.map(([title, list]) => `<div class="section-title">${title}</div><div class="card list menu">${list.map(x => `<div class="item" data-m="${n++}"><div class="ico">${x[0]}</div><div class="grow"><div>${x[1]}</div><div class="muted">${x[2]}</div></div><span class="muted">‹</span></div>`).join('')}</div>`).join('') +
+  view().innerHTML = groups.map(([title, list]) => `<div class="section-title">${title}</div><div class="card list menu">${list.map(x => `<div class="item" data-m="${n++}"><div class="ico blue">${ic(x[0])}</div><div class="grow"><div class="t">${x[1]}</div><div class="muted">${x[2]}</div></div><span class="chev">${ic('chevron')}</span></div>`).join('')}</div>`).join('') +
     `<p class="muted" style="text-align:center">بياناتك محفوظة على هذا الجهاز فقط ولا تُرسل لأي خادم. خذ نسخة احتياطية بانتظام.</p>`;
   view().querySelectorAll('[data-m]').forEach(el => el.onclick = () => items[+el.dataset.m][3]());
 }
@@ -671,11 +734,11 @@ function renderCards() {
           ${lim ? `<div style="text-align:left"><div class="muted">المتاح</div><div class="big2 num">${money(Math.max(0, lim - owed))}</div></div>` : ''}</div>
         ${lim ? `<div class="bar light ${p >= 80 ? 'over' : p >= 50 ? 'warn' : ''}"><i style="width:${Math.min(100, p)}%"></i></div><div class="muted" style="margin-top:4px">${p.toFixed(0)}% من الحد ${money(lim)} ${a.currency}${p >= 30 ? ' · يُفضّل إبقاء الاستخدام أقل من 30%' : ''}</div>` : ''}
         <div class="muted" style="margin-top:6px">${a.statementDay ? `كشف الحساب يوم ${a.statementDay}` : ''}${a.dueDay ? ` · آخر موعد سداد يوم ${a.dueDay} (بعد ${daysUntilDay(a.dueDay)} يوم)` : ''}${blocked ? ` · أقساط متبقية ${money(blocked)}` : ''}</div>
-        <div class="btns"><button class="btn small" data-pay="${a.id}">💸 سداد البطاقة</button><button class="btn small" data-plan="${a.id}">📅 تقسيط جديد</button><button class="btn small" data-edit="${a.id}">✏️</button></div>
+        <div class="btns"><button class="btn small" data-pay="${a.id}">سداد البطاقة</button><button class="btn small" data-plan="${a.id}">تقسيط جديد</button><button class="btn small" data-edit="${a.id}">تعديل</button></div>
       </div>`;
     }).join('') : `<div class="card empty">لا توجد بطاقات ائتمان بعد.<br>أضف بطاقة لمتابعة الحد المستخدم ومواعيد السداد والتقسيط.</div>`}
     <button class="btn primary block" id="ccNew">＋ إضافة بطاقة ائتمان</button>
-    <h3 style="margin-top:18px">📅 خطط التقسيط</h3>
+    <h3 style="margin-top:18px">خطط التقسيط</h3>
     ${db.installments.length ? db.installments.map(p => {
       const s = planSummary(p); const a = acc(p.cardId);
       return `<div class="card plan" data-p="${p.id}">
@@ -808,28 +871,28 @@ function renderSavings() {
     </div>
     ${!inc && avgInc ? '<div class="insight">ℹ️ مفيش دخل مسجّل الشهر ده، فالحساب على متوسط دخلك آخر 3 شهور.</div>' : ''}
     ${!incBase ? '<div class="insight w">سجّل دخلك (المرتب مثلاً) عشان نقدر نحسب خطة الادخار. ممكن تضيفه كمعاملة متكررة شهرية.</div>' : ''}
-    <div class="card"><h3>📐 قاعدة 50 / 30 / 20</h3>
+    <div class="card"><h3>قاعدة 50 / 30 / 20</h3>
       <p class="muted" style="margin-top:0">قسّم دخلك: 50% احتياجات أساسية، 30% رغبات، 20% ادخار.</p>
       <div class="rule"><div class="row between"><span>🏠 احتياجات</span><span class="num">${money(needs)} <small class="muted">من ${money(incBase * .5)}</small></span></div>${bar(needs, 50, needs > incBase * .5 ? 'over' : '')}</div>
       <div class="rule"><div class="row between"><span>🎉 رغبات</span><span class="num">${money(wants)} <small class="muted">من ${money(incBase * .3)}</small></span></div>${bar(wants, 30, wants > incBase * .3 ? 'over' : '')}</div>
       <div class="rule"><div class="row between"><span>💰 ادخار</span><span class="num">${money(Math.max(0, saved))} <small class="muted">من ${money(incBase * target / 100)}</small></span></div>${bar(Math.max(0, saved), target, 'good')}</div>
       <p class="muted">تقدر تغيّر نوع أي تصنيف (احتياج أو رغبة) من «التصنيفات».</p>
     </div>
-    <div class="card"><h3>🛟 صندوق الطوارئ</h3>
+    <div class="card"><h3>صندوق الطوارئ</h3>
       <div class="row between"><span>رصيد حسابات التوفير والذهب</span><b class="num">${money(savingsBal)}</b></div>
       <div class="row between muted"><span>المطلوب (6 شهور احتياجات)</span><span class="num">${money(emergency)}</span></div>
       <div class="bar good"><i style="width:${em}%"></i></div>
       <p class="muted">${em >= 100 ? '✅ صندوق الطوارئ مكتمل، ابدأ وجّه الزيادة للاستثمار أو أهدافك.' : `ناقصك ${money(Math.max(0, emergency - savingsBal))}. لو ادّخرت ${money(incBase * target / 100)} شهرياً هتوصل خلال ${incBase ? Math.ceil(Math.max(0, emergency - savingsBal) / Math.max(1, incBase * target / 100)) : '—'} شهر.`}</p>
     </div>
-    ${wantCats.length ? `<div class="card"><h3>✂️ فرص للتوفير</h3>${wantCats.map(([c, v]) => `<div class="insight">${c.icon} ${esc(lbl(c.name))}: صرفت <b class="num">${money(v)}</b>. لو قلّلت 20% هتوفّر <b class="num">${money(v * .2)}</b> شهرياً (${money(v * .2 * 12)} في السنة).</div>`).join('')}</div>` : ''}
-    <div class="card"><h3>🎯 خطة الأهداف</h3>
+    ${wantCats.length ? `<div class="card"><h3>فرص للتوفير</h3>${wantCats.map(([c, v]) => `<div class="insight">${c.icon} ${esc(lbl(c.name))}: صرفت <b class="num">${money(v)}</b>. لو قلّلت 20% هتوفّر <b class="num">${money(v * .2)}</b> شهرياً (${money(v * .2 * 12)} في السنة).</div>`).join('')}</div>` : ''}
+    <div class="card"><h3>خطة الأهداف</h3>
       ${db.goals.length ? db.goals.map(g => { const left = Math.max(0, g.target - g.saved); const months = g.deadline ? Math.max(1, Math.ceil((g.deadline - Date.now()) / (30.44 * DAY))) : null;
         return `<div class="rule"><div class="row between"><span>${g.icon} ${esc(g.name)}</span><span class="num muted">${money(g.saved)} / ${money(g.target)}</span></div><div class="bar good"><i style="width:${Math.min(100, g.saved / g.target * 100)}%"></i></div>
         <div class="muted">${left <= 0 ? '✅ تم الهدف' : months ? `محتاج تحوّش <b class="num">${money(left / months)}</b> ${g.currency} شهرياً لمدة ${months} شهر` : `ناقص ${money(left)} ${g.currency} · حدّد تاريخ للهدف عشان نحسب القسط الشهري`}</div></div>`; }).join('') : '<p class="muted">مفيش أهداف لسه.</p>'}
       <button class="btn small" id="svGoal">＋ هدف جديد</button>
     </div>
-    <div class="card"><h3>💡 نصيحة النهارده</h3><p style="margin:0">${tip}</p></div>
-    <div class="card"><h3>⚙️ نسبة الادخار المستهدفة</h3>
+    <div class="card"><h3>نصيحة النهارده</h3><p style="margin:0">${tip}</p></div>
+    <div class="card"><h3>نسبة الادخار المستهدفة</h3>
       <div class="chips">${[10, 15, 20, 25, 30].map(v => `<button class="chip ${target === v ? 'on' : ''}" data-sr="${v}">${v}%</button>`).join('')}</div></div>`;
   $('#svGoal').onclick = () => editGoal();
   view().querySelectorAll('[data-sr]').forEach(b => b.onclick = () => { db.prefs.savingRate = +b.dataset.sr; save(); renderSavings(); });
@@ -884,9 +947,9 @@ function renderInbox() {
   view().innerHTML = `
     <div class="card">
       <div class="quick inside">
-        <button id="ibPaste"><span class="qi blue">📋</span>لصق رسائل</button>
-        <button id="ibFile"><span class="qi purple">📂</span>استيراد ملف</button>
-        <button id="ibHow"><span class="qi amber">⚡</span>ربط تلقائي</button>
+        <button id="ibPaste"><span class="qi">${ic('list')}</span>لصق رسائل</button>
+        <button id="ibFile"><span class="qi">${ic('upload')}</span>استيراد ملف</button>
+        <button id="ibHow"><span class="qi">${ic('sparkle')}</span>ربط تلقائي</button>
       </div>
       <input type="file" id="ibFileIn" accept=".txt,text/plain" class="hidden">
       <label class="row" style="margin-top:12px"><input type="checkbox" id="ibAuto" ${db.prefs.autoAddSms ? 'checked' : ''}> أضف الحركات تلقائياً بدون مراجعة (لما الحساب يتعرّف)</label>
@@ -942,18 +1005,18 @@ function icsFor(time) {
 function openSettings() {
   const notifOk = 'Notification' in window;
   sheet('الإعدادات', `
-    <h3>🌓 المظهر</h3>
+    <h3>المظهر</h3>
     <div class="seg" id="stTheme">${[['auto', 'تلقائي'], ['light', '☀️ فاتح'], ['dark', '🌙 داكن']].map(([k, v]) => `<button data-th="${k}" class="${(db.prefs.theme || 'auto') === k ? 'on' : ''}">${v}</button>`).join('')}</div>
     <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
-    <h3 style="margin-top:16px">⏰ التذكير اليومي</h3>
+    <h3 style="margin-top:16px">التذكير اليومي</h3>
     <label class="f">وقت التذكير</label><input class="in" type="time" id="stTime" value="${db.prefs.reminderTime || '21:00'}">
     <button class="btn primary block" id="stIcs" style="margin-top:10px">📅 إضافة التذكير اليومي للتقويم</button>
     <p class="muted">هيظهر لك تنبيه كل يوم في الوقت ده على الآيفون <b>وعلى ساعة أبل</b> كمان. اضغط «Add All» لما يظهر لك التقويم.</p>
     ${notifOk ? `<button class="btn block" id="stNotif">🔔 تفعيل إشعارات التطبيق</button><p class="muted">على الآيفون محتاج تكون ضايف التطبيق للشاشة الرئيسية (iOS 16.4 أو أحدث).</p>` : ''}
-    <h3 style="margin-top:16px">✉️ رسائل البنك</h3>
+    <h3 style="margin-top:16px">رسائل البنك</h3>
     <label class="row"><input type="checkbox" id="stAuto" ${db.prefs.autoAddSms ? 'checked' : ''}> إضافة حركات الرسائل تلقائياً</label>
     <button class="btn block" id="stSmsHow" style="margin-top:8px">⚡ طريقة الربط التلقائي بالاختصارات</button>
-    <h3 style="margin-top:16px">⌚ ساعة أبل</h3>
+    <h3 style="margin-top:16px">ساعة أبل</h3>
     <p class="muted">تطبيقات الويب مش بتتثبت على الساعة، لكن تذكير التقويم اليومي بيظهر عليها. تطبيق ساعة كامل محتاج يتعمل كتطبيق iOS أصلي على جهاز Mac.</p>
     <h3 style="margin-top:16px">أخرى</h3>
     <div class="list menu">
@@ -1056,7 +1119,7 @@ function openSmsPaste() {
 
 function openAccounts() {
   const bal = balances();
-  sheet('الحسابات', `<div class="list">${db.accounts.map(a => `<div class="item" data-a="${a.id}"><div class="ico">${ACC_ICONS[a.type] || '💳'}</div>
+  sheet('الحسابات', `<div class="list">${db.accounts.map(a => `<div class="item" data-a="${a.id}"><div class="ico blue">${accIcon(a)}</div>
     <div class="grow"><div>${esc(lbl(a.name))}${a.archived ? ' <span class="muted">(مؤرشف)</span>' : ''}</div><div class="muted">${ACC_TYPES[a.type] || a.type}${a.last4 ? ' · ••' + esc(a.last4) : ''}</div></div>
     <div class="num">${money(bal[a.id] || 0)} <small class="muted">${a.currency}</small></div></div>`).join('')}</div>
     <button class="btn primary block" id="aNew" style="margin-top:10px">＋ حساب جديد</button>`, () => {
@@ -1182,7 +1245,7 @@ function subscriptionHints() {
     hints.push({ merchant: last.merchant, amount: Math.round(avg * 100) / 100, accountId: last.accountId, categoryId: last.categoryId, period, lastDate: last.date });
   }
   if (!hints.length) return '';
-  return `<h3 style="margin-top:12px">💡 اشتراكات مكتشفة</h3>${hints.map(h => `<div class="insight">${esc(h.merchant)} · <span class="num">${money(h.amount)}</span> · ${PERIODS[h.period]} <button class="btn small" data-sub='${esc(JSON.stringify(h))}'>إضافة كمتكررة</button></div>`).join('')}`;
+  return `<h3 style="margin-top:12px">اشتراكات مكتشفة</h3>${hints.map(h => `<div class="insight">${esc(h.merchant)} · <span class="num">${money(h.amount)}</span> · ${PERIODS[h.period]} <button class="btn small" data-sub='${esc(JSON.stringify(h))}'>إضافة كمتكررة</button></div>`).join('')}`;
 }
 function editRecurring(r, hint) {
   const isNew = !r;
@@ -1480,13 +1543,17 @@ document.querySelector('.sheet-bg').onclick = closeSheet;
 $('#pinGo').onclick = tryUnlock;
 $('#pinIn').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
 $('#settingsBtn').onclick = openSettings;
+$('#settingsBtn').innerHTML = ic('settings');
+$('#back').innerHTML = ic('back');
+const TAB_ICONS = { home: 'home', txns: 'list', add: 'plus', reports: 'chart', more: 'grid' };
+document.querySelectorAll('.tabs button').forEach(b => { b.querySelector('span').innerHTML = ic(TAB_ICONS[b.dataset.tab]); });
 // الوضع الفاتح / الداكن: auto يتبع إعداد الآيفون
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => db.prefs.theme === 'dark' || (db.prefs.theme !== 'light' && darkMq.matches);
 function applyTheme() {
   const t = db.prefs.theme;
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
-  $('#themeBtn').textContent = isDark() ? '☀️' : '🌙';
+  $('#themeBtn').innerHTML = ic(isDark() ? 'sun' : 'moon');
   document.querySelector('meta[name=theme-color]').content = isDark() ? '#0c111d' : '#0e7c6b';
 }
 function setTheme(t) { db.prefs.theme = t; save(); applyTheme(); }
