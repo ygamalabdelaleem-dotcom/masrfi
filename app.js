@@ -1801,6 +1801,45 @@ async function azSpeak(text, onEnd, voice) {
   const a = azPlayer(); a.pause(); a.src = url; a.onended = () => onEnd && onEnd();
   await a.play();
 }
+// صوت Gemini (نفس أصوات Google AI Studio): مفتاح مجاني من aistudio.google.com، وبيرجّع PCM بنحوّله WAV
+const GM_VOICES = { Kore: 'Kore (ست، واضح)', Aoede: 'Aoede (ست، هادي)', Zephyr: 'Zephyr (ست، مشرق)', Leda: 'Leda (ست، شبابي)', Despina: 'Despina (ست، ناعم)', Sulafat: 'Sulafat (ست، دافي)', Charon: 'Charon (راجل)', Puck: 'Puck (راجل، مرح)' };
+const GM_MODELS = ['gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-tts', 'gemini-2.5-pro-preview-tts'];
+const gmOn = () => !!(db.prefs.gmKey && db.prefs.gmVoice && db.prefs.gmVoice !== 'off');
+function pcmToWav(b64, rate = 24000) {
+  const pcm = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const buf = new ArrayBuffer(44 + pcm.length); const v = new DataView(buf);
+  const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + pcm.length, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, pcm.length, true);
+  new Uint8Array(buf, 44).set(pcm);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+async function gmSpeak(text, onEnd, voice) {
+  const say = speechText(text, true); if (!say) return;
+  const v = voice || db.prefs.gmVoice || 'Kore';
+  const key = 'gm' + v + say;
+  let url = azCache.get(key);
+  if (!url) {
+    const body = { contents: [{ parts: [{ text: `اقرأ الجملة دي بصوت طبيعي ودود ولهجة مصرية، وبسرعة عادية: ${say}` }] }],
+      generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: v } } } } };
+    let r, last;
+    for (const m of [db.prefs.gmModel, ...GM_MODELS].filter(Boolean)) {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'x-goog-api-key': db.prefs.gmKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.ok) { db.prefs.gmModel = m; break; }
+      last = r.status; if (r.status !== 404) break;
+    }
+    if (!r.ok) throw new Error('gemini ' + (last || r.status));
+    const j = await r.json();
+    const part = ((((j.candidates || [])[0] || {}).content || {}).parts || []).find(p => p.inlineData);
+    if (!part) throw new Error('gemini no audio');
+    const rate = +((/rate=(\d+)/.exec(part.inlineData.mimeType || '') || [])[1] || 24000);
+    url = URL.createObjectURL(pcmToWav(part.inlineData.data, rate));
+    if (azCache.size > 40) azCache.delete(azCache.keys().next().value);
+    azCache.set(key, url);
+  }
+  const a = azPlayer(); a.pause(); a.src = url; a.playbackRate = db.prefs.voiceRate > 1 ? 1.1 : db.prefs.voiceRate < 0.9 ? 0.9 : 1; a.onended = () => onEnd && onEnd();
+  await a.play();
+}
 function unlockSpeech() {
   if (speechUnlocked) return;
   // الآيفون بيسمح بتشغيل الصوت بعد كده من نفس العنصر لو اتشغّل مرة من لمسة
@@ -1812,6 +1851,12 @@ function unlockSpeech() {
 ['touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockSpeech, { capture: true, passive: true }));
 function speak(text, onEnd, plain) {
   if (db.prefs.voiceOff) { onEnd && setTimeout(onEnd, 2500); return; }
+  if (!plain && (speak.gm || (gmOn() && !speak.az))) {
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    const voice = speak.gm; speak.token = (speak.token || 0) + 1;
+    gmSpeak(text, onEnd, voice).catch(e => { console.warn(e); if (voice) toast('صوت Gemini ماشتغلش (' + e.message + '): اتأكد من المفتاح والنت'); else if (azOn()) { speak.az = db.prefs.azVoice; speak(text, onEnd); speak.az = null; } else speak(text, onEnd, true); });
+    return;
+  }
   if (!plain && (azOn() || speak.az)) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     const voice = speak.az; speak.token = (speak.token || 0) + 1;
@@ -1853,6 +1898,14 @@ function openVoicePicker() {
   const row = (uri, name, sub, q) => `<div class="item"><button class="btn small" data-play="${esc(uri)}">${ic('speaker')}</button><div class="grow"><div class="ellipsis">${esc(name)}</div><div class="muted">${sub}</div></div>
     ${q ? `<span class="pill">${q}</span>` : ''}<button class="chip ${(db.prefs.voiceURI || '') === uri ? 'on' : ''}" data-pick="${esc(uri)}">${(db.prefs.voiceURI || '') === uri ? '✓ مختار' : 'اختار'}</button></div>`;
   sheet('أمثلة الأصوات', `<p class="muted">اضغط ${ic('speaker', 'inl')} تسمع كل صوت، واختار اللي يعجبك. الأصوات دي من الآيفون نفسه، فالتطبيق مايقدرش يجيب غيرها.</p>
+    <h3>أصوات Google Gemini (زي AI Studio)</h3>
+    <div class="list">${Object.entries(GM_VOICES).map(([k, n]) => `<div class="item"><button class="btn small" data-gmplay="${k}">${ic('speaker')}</button><div class="grow"><div>${n}</div><div class="muted">${db.prefs.gmKey ? 'Gemini · محتاج نت' : 'حط المفتاح تحت الأول'}</div></div>
+      <button class="chip ${gmOn() && db.prefs.gmVoice === k ? 'on' : ''}" data-gmpick="${k}">${gmOn() && db.prefs.gmVoice === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
+    <details style="margin:8px 0 14px" ${db.prefs.gmKey ? '' : 'open'}><summary class="muted">مفتاح Gemini (مرة واحدة)</summary>
+      <label class="f">API Key</label><input class="in" id="gmKey" value="${esc(db.prefs.gmKey || '')}" autocomplete="off" placeholder="AIza...">
+      <button class="btn block" id="gmSave" style="margin-top:8px">حفظ المفتاح</button>
+      <ol class="steps muted" style="margin-top:8px"><li>ادخل <b>aistudio.google.com</b> بحساب جوجل</li><li>اضغط <b>Get API key</b> ← <b>Create API key</b></li><li>انسخ المفتاح والصقه هنا</li></ol>
+      <p class="muted">مجاني في حدود معينة في اليوم. جملة الرد بس اللي بتتبعت لجوجل عشان تتقري، وباقي بياناتك على موبايلك.</p></details>
     <h3>صوت مصري طبيعي (Azure)</h3>
     <div class="list">${Object.entries(AZ_VOICES).map(([k, n]) => `<div class="item"><button class="btn small" data-azplay="${k}">${ic('speaker')}</button><div class="grow"><div>${n}</div><div class="muted">${db.prefs.azKey ? 'Microsoft Azure · محتاج نت' : 'حط المفتاح تحت الأول'}</div></div><span class="pill">طبيعي</span>
       <button class="chip ${azOn() && (db.prefs.azVoice || 'ar-EG-SalmaNeural') === k ? 'on' : ''}" data-azpick="${k}">${azOn() && (db.prefs.azVoice || 'ar-EG-SalmaNeural') === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
@@ -1866,11 +1919,15 @@ function openVoicePicker() {
     <div class="list">${row('', 'تلقائي', 'أحسن صوت متاح', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>
     ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}`, () => {
     document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak(VOICE_SAMPLE); speak.only = null; });
-    document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; db.prefs.azVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
+    document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; db.prefs.azVoice = 'off'; db.prefs.gmVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
+    $('#gmSave').onclick = () => { db.prefs.gmKey = $('#gmKey').value.trim(); if (!db.prefs.gmVoice || db.prefs.gmVoice === 'off') db.prefs.gmVoice = 'Kore'; save(); speak.gm = db.prefs.gmVoice; speak(VOICE_SAMPLE); speak.gm = null; openVoicePicker(); };
+    const gmRead = () => { if ($('#gmKey').value.trim()) db.prefs.gmKey = $('#gmKey').value.trim(); return !!db.prefs.gmKey || (toast('حط مفتاح Gemini الأول'), false); };
+    document.querySelectorAll('[data-gmplay]').forEach(b => b.onclick = () => { if (!gmRead()) return; toast('ثانية...'); speak.gm = b.dataset.gmplay; speak(VOICE_SAMPLE); speak.gm = null; });
+    document.querySelectorAll('[data-gmpick]').forEach(b => b.onclick = () => { if (!gmRead()) return; db.prefs.gmVoice = b.dataset.gmpick; save(); openVoicePicker(); toast('تم اختيار ' + b.dataset.gmpick); });
     const azRead = () => { db.prefs.azKey = $('#azKey').value.trim(); db.prefs.azRegion = ($('#azRegion').value.trim() || 'westeurope').toLowerCase().replace(/\s+/g, ''); };
-    $('#azSave').onclick = () => { azRead(); if (db.prefs.azVoice === 'off' || !db.prefs.azVoice) db.prefs.azVoice = 'ar-EG-SalmaNeural'; save(); speak.az = db.prefs.azVoice; speak(VOICE_SAMPLE); speak.az = null; openVoicePicker(); };
+    $('#azSave').onclick = () => { azRead(); if (db.prefs.azVoice === 'off' || !db.prefs.azVoice) db.prefs.azVoice = 'ar-EG-SalmaNeural'; db.prefs.gmVoice = 'off'; save(); speak.az = db.prefs.azVoice; speak(VOICE_SAMPLE); speak.az = null; openVoicePicker(); };
     document.querySelectorAll('[data-azplay]').forEach(b => b.onclick = () => { if ($('#azKey').value.trim()) azRead(); if (!db.prefs.azKey) return toast('حط مفتاح Azure الأول'); speak.az = b.dataset.azplay; speak(VOICE_SAMPLE); speak.az = null; });
-    document.querySelectorAll('[data-azpick]').forEach(b => b.onclick = () => { if ($('#azKey').value.trim()) azRead(); if (!db.prefs.azKey) return toast('حط مفتاح Azure الأول'); db.prefs.azVoice = b.dataset.azpick; save(); openVoicePicker(); toast('تم اختيار ' + AZ_VOICES[b.dataset.azpick]); });
+    document.querySelectorAll('[data-azpick]').forEach(b => b.onclick = () => { if ($('#azKey').value.trim()) azRead(); if (!db.prefs.azKey) return toast('حط مفتاح Azure الأول'); db.prefs.azVoice = b.dataset.azpick; db.prefs.gmVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار ' + AZ_VOICES[b.dataset.azpick]); });
   });
 }
 function voiceSettingsHtml() {
