@@ -1554,7 +1554,7 @@ function applyTheme() {
   const t = db.prefs.theme;
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   $('#themeBtn').innerHTML = ic(isDark() ? 'sun' : 'moon');
-  document.querySelector('meta[name=theme-color]').content = isDark() ? '#0c111d' : '#0e7c6b';
+  document.querySelector('meta[name=theme-color]').content = isDark() ? '#07172e' : '#062a57';
 }
 function setTheme(t) { db.prefs.theme = t; save(); applyTheme(); }
 $('#themeBtn').onclick = () => setTheme(isDark() ? 'light' : 'dark');
