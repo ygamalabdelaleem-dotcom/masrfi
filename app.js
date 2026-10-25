@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '44';
+const APP_VERSION = '45';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2495,6 +2495,7 @@ function parseVoice(raw) {
 // المساعد بيقرا من البيانات الحية كل مرة (مفيش نسخة محفوظة)، فأي تعديل في البرنامج بيبان في رده على طول.
 const nrm = x => String(x || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/[ًٌٍَُِّْـ]/g, '');
 const r0 = v => (Math.round(v) || 0).toLocaleString('en-US');
+const daysAr = n => n === 1 ? 'يوم' : n === 2 ? 'يومين' : n >= 3 && n <= 10 ? `${n} أيام` : `${n} يوم`;
 function periodOf(t) {
   if (/(الشهر اللي فات|الشهر الماضي|الشهر اللي قبله|الشهر السابق)/.test(t)) { const [f, to] = monthRange(-1); return { f, to, label: 'الشهر اللي فات' }; }
   if (/(النهارده|انهارده|اليوم)/.test(t)) return { f: dayStart(Date.now()), to: Date.now(), label: 'النهارده' };
@@ -2511,6 +2512,15 @@ function catInText(t) {
 function dataReply(t) {
   if (/(ازاي|كيف|يعني ايه|اشرح|اضيف|اعمل ايه|هعمل ايه)/.test(t) || /(^|\s)لو\s/.test(t)) return null;
   if (/\d/.test(t) && /(صرفت|دفعت|اشتريت|قبضت|استلمت|جالي)\s*\d/.test(t)) return null;
+  // ميعاد المرتب / القبض
+  const PAYW = /(المرتب|مرتب|القبض|قبض|الراتب|راتب|الماهيه|الشهريه|يوم الدفع)/;
+  if (PAYW.test(t) && /(كام يوم|كم يوم|امتي|امتى|ميعاد|موعد|فاضل|باقي|متبقي|لسه|قرب|هقبض|هنقبض|ينزل|نازل)/.test(t) && !/\d{3,}/.test(t)) {
+    if (!hasProfile() || !prof().payday) return { reply: 'حدّد يوم القبض من «بياناتي المالية» الأول عشان أحسبلك.' };
+    const c = payCycle(); const d = c.left; const nd = new Date(c.next);
+    const when = d <= 1 ? (dayStart(c.next) === dayStart(Date.now()) ? 'النهارده' : 'بكرة') : `بعد ${daysAr(d)}`;
+    const cp = cashPlan();
+    return { reply: `المرتب ${when}، يوم ${nd.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}. لحد ساعتها تقدر تصرف ${r0(cp.safeDaily)} في اليوم، ومتوقع توصل ومعاك ${r0(cp.atPay)}.`, go: () => setTab('ctrl'), goLabel: 'المتحكم المالي' };
+  }
   const P = periodOf(t); const list = inRange(P.f, P.to);
   const ex = list.filter(x => x.type === 'EXPENSE'); const exp = ex.reduce((s0, x) => s0 + conv(x.amount, txCur(x)), 0);
   // الأقساط
@@ -2699,8 +2709,9 @@ function handleVoice(text) {
     return { reply: `رصيدك الحالي ${Math.round(ps.total)}، وبعد أقساط الشهر ${Math.round(ps.afterInst)}، وصافي رصيدك بعد كل الديون والأقساط ${Math.round(ps.net)}` };
   }
   if (/(رصيدي|رصيد|معايا كام)/.test(t) && !/\d/.test(t)) {
-    const b = balances(); const tot = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(b[a.id] || 0, a.currency), 0);
-    return { reply: `إجمالي رصيدك ${Math.round(tot)} ${base() === 'EGP' ? 'جنيه' : base()}` };
+    const ps = positions(); const b = balances();
+    const liq = db.accounts.filter(a => !a.archived && a.type !== 'CREDIT').map(a => `${lbl(a.name)} ${r0(b[a.id] || 0)}`);
+    return { reply: `معاك في حساباتك ${r0(ps.assets)} (${liq.join('، ')})${ps.cardOwed ? `، وعليك للبطاقات ${r0(ps.cardOwed)}، فالإجمالي ${r0(ps.total)}` : ''}.` };
   }
   const r = parseVoice(text);
   // سؤال افتراضي («لو اشتريت...»، «ينفع أشتري...») مايتسجلش كمصروف
