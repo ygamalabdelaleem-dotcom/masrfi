@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '24';
+const APP_VERSION = '25';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -833,7 +833,8 @@ function renderCards() {
         <div class="bar"><i style="width:${s.paid / s.rows.length * 100}%"></i></div>
       </div>`;
     }).join('') : '<div class="card empty">لا توجد خطط تقسيط. اضغط «تقسيط جديد» من البطاقة أو من هنا.</div>'}
-    <button class="btn block" id="plNew">＋ خطة تقسيط</button>`;
+    <div class="btns"><button class="btn primary" id="plImg">📷 تقسيط من صورة البنك</button><button class="btn" id="plNew">＋ خطة تقسيط</button></div>
+    <p class="muted">تقدر تختار كذا صورة مرة واحدة، وكل صورة بتتحوّل لتقسيط. لو التقسيط موجود بيتحدّث بس.</p>`;
   view().querySelectorAll('[data-pay]').forEach(b => b.onclick = () => {
     const a = acc(+b.dataset.pay); const owed = Math.max(0, -(balances()[a.id] || 0));
     const from = db.accounts.find(x => x.type !== 'CREDIT' && x.currency === a.currency && !x.archived);
@@ -844,16 +845,76 @@ function renderCards() {
   view().querySelectorAll('[data-p]').forEach(el => el.onclick = () => openPlan(db.installments.find(p => p.id === +el.dataset.p)));
   $('#ccNew').onclick = () => editAccount(null, true);
   $('#plNew').onclick = () => editPlan();
+  $('#plImg').onclick = () => addPlansFromImages();
 }
 
+// ===== قراءة صورة شاشة التقسيط من تطبيق البنك (OCR على الجهاز بـ Tesseract) =====
+const addMonths = (ms, k) => { const d = new Date(ms); const day = d.getDate(); const t = new Date(d.getFullYear(), d.getMonth() + k, 1, 9); t.setDate(Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate())); return t.getTime(); };
+let tessP = null;
+function loadTess() {
+  return tessP || (tessP = new Promise((res, rej) => {
+    if (window.Tesseract) return res(window.Tesseract);
+    const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    sc.onload = () => res(window.Tesseract); sc.onerror = () => { tessP = null; rej(new Error('net')); }; document.head.appendChild(sc);
+  }));
+}
+async function ocrImages(files) {
+  const T = await loadTess();
+  const w = await T.createWorker('eng');
+  const out = [];
+  for (const f of files) out.push((await w.recognize(f)).data.text);
+  await w.terminate();
+  return out;
+}
+// يطلّع بيانات التقسيط من نص الشاشة (Original amount, Monthly payment, ...)
+function parseBankPlan(text) {
+  const t = normDigits(text).replace(/\r/g, '');
+  const num = re => { const m = re.exec(t); return m ? parseFloat(m[1].replace(/,/g, '')) : null; };
+  const name = (/Merchant name\s*\n\s*([^\n]+)/i.exec(t) || [])[1];
+  const rem = /Remaining\s+installments?\s*(\d+)\s*out\s*of\s*(\d+)/i.exec(t);
+  const mat = /Maturity\s+date\s*\n?\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{2,4})/i.exec(t);
+  const r = { name: name ? name.trim() : '', principal: num(/Original\s+amount\s*\n?\s*([\d,]+(?:\.\d+)?)/i), monthlyFixed: num(/Monthly\s+payment\s*\n?\s*([\d,]+(?:\.\d+)?)/i),
+    mRate: num(/Interest\s+rate\s*\n?\s*([\d.]+)\s*%/i), outstanding: num(/st\w*\s+amount\s*\n?\s*([\d,]+(?:\.\d+)?)/i),
+    remaining: rem ? +rem[1] : null, months: rem ? +rem[2] : null,
+    end: mat ? new Date(+mat[3] < 100 ? 2000 + +mat[3] : +mat[3], +mat[2] - 1, +mat[1], 9).getTime() : null };
+  r.ok = !!(r.principal && r.monthlyFixed && r.months && r.remaining != null && r.end);
+  return r;
+}
+function planFromBank(x, cardId) {
+  return { id: newId(), name: (x.name || 'تقسيط') + (x.principal ? ` (${Math.round(x.principal).toLocaleString('en-US')})` : ''), cardId: cardId || null, principal: x.principal || '', monthlyFixed: x.monthlyFixed || '', rate: (x.mRate || 0) * 12, method: 'REDUCING', months: x.months, fees: 0,
+    startDate: addMonths(x.end, -x.months), paid: Math.max(0, x.months - x.remaining), autoPay: true, bankMode: true };
+}
+// إضافة تقسيط (أو أكتر) من صور شاشة البنك
+function addPlansFromImages(cardId) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+  inp.onchange = async () => {
+    const files = [...inp.files]; if (!files.length) return;
+    toast('بقرا الصورة... ثواني'); 
+    let texts; try { texts = await ocrImages(files); } catch (e) { return toast('محتاج نت أول مرة عشان قراءة الصور'); }
+    let added = 0, updated = 0; const partial = [];
+    texts.forEach(tx => {
+      const x = parseBankPlan(tx);
+      if (!x.ok) { partial.push(x); return; }
+      const card = cardId || (db.accounts.find(a => a.type === 'CREDIT' && !a.archived) || {}).id;
+      const old = db.installments.find(p => Math.abs(p.principal - x.principal) < 0.01 && Math.abs((+p.monthlyFixed || 0) - x.monthlyFixed) < 0.01);
+      const np = planFromBank(x, card);
+      if (old) { Object.assign(old, np, { id: old.id }); updated++; } else { db.installments.push(np); added++; }
+    });
+    save(); runInstallments(); setTab('cards');
+    if (added || updated) toast(`${added ? `اتضاف ${added} تقسيط` : ''}${added && updated ? ' و' : ''}${updated ? `اتحدّث ${updated}` : ''}`);
+    if (partial.length) { const x = partial[0]; toast('مقدرتش أقرا كل الخانات، كمّلها بإيدك'); editPlanBank(Object.assign(planFromBank({ ...x, months: x.months || 12, remaining: x.remaining ?? 12, end: x.end || Date.now() }, cardId), { id: 0, name: x.name || '' }), cardId, true); }
+  };
+  inp.click();
+}
 // إدخال التقسيط بنفس خانات شاشة البنك (Transaction details)
-function editPlanBank(p, cardId) {
-  const isNew = !p;
+function editPlanBank(p, cardId, prefilled) {
+  const isNew = !p || prefilled;
   p = p || { name: '', cardId: cardId || (db.accounts.find(a => a.type === 'CREDIT') || {}).id || null, principal: '', rate: '', months: 12, method: 'REDUCING', fees: 0, startDate: Date.now(), paid: 0, monthlyFixed: '', autoPay: true };
-  const addM = (ms, k) => { const d = new Date(ms); const day = d.getDate(); const t = new Date(d.getFullYear(), d.getMonth() + k, 1, 9); t.setDate(Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate())); return t.getTime(); };
-  const maturity = isNew ? '' : fmtDate(addM(p.startDate, p.months));
+  const addM = addMonths;
+  const maturity = !p.id && !prefilled ? '' : fmtDate(addM(p.startDate, p.months));
   sheet(isNew ? 'تقسيط جديد (زي شاشة البنك)' : 'تعديل التقسيط', `
-    <p class="muted">انقل الأرقام من شاشة التقسيط في تطبيق البنك (Transaction details).</p>
+    <button class="btn primary block" id="bImg">📷 املا الخانات من صورة شاشة البنك</button>
+    <p class="muted">أو انقل الأرقام بإيدك من شاشة التقسيط في تطبيق البنك (Transaction details).</p>
     <label class="f">الاسم (Merchant name)</label><input class="in" id="bN" value="${esc(p.name)}" placeholder="Balance Conversion">
     <label class="f">البطاقة</label><select class="in" id="bC">${accOptions(p.cardId, a => a.type === 'CREDIT')}</select>
     <div class="grid2">
@@ -861,7 +922,7 @@ function editPlanBank(p, cardId) {
       <div><label class="f">Monthly payment</label><input class="in num" id="bMF" inputmode="decimal" value="${p.monthlyFixed || ''}"></div>
       <div><label class="f">Monthly Interest rate %</label><input class="in num" id="bR" inputmode="decimal" value="${p.rate ? Math.round(p.rate / 12 * 1000) / 1000 : ''}"></div>
       <div><label class="f">Maturity date</label><input class="in" type="date" id="bEnd" value="${maturity}"></div>
-      <div><label class="f">Remaining installments</label><input class="in num" id="bRem" inputmode="numeric" value="${isNew ? '' : p.months - (p.paid || 0)}"></div>
+      <div><label class="f">Remaining installments</label><input class="in num" id="bRem" inputmode="numeric" value="${!p.id && !prefilled ? '' : p.months - (p.paid || 0)}"></div>
       <div><label class="f">out of (عدد الشهور)</label><input class="in num" id="bM" inputmode="numeric" value="${p.months}"></div>
     </div>
     <label class="row" style="margin-top:12px"><input type="checkbox" id="bAuto" ${p.autoPay !== false ? 'checked' : ''}> سجّل القسط تلقائياً كل شهر على البطاقة</label>
@@ -879,10 +940,22 @@ function editPlanBank(p, cardId) {
       const s = planSummary(x); const d = planDates(x);
       $('#bPrev').innerHTML = `المتبقي (Outstanding) هيطلع: <b class="num">${money(s.outstanding)}</b><br>باقي ${s.rows.length - s.paid} من ${s.rows.length} · آخر قسط يتقيّد ${ltr(fmtDate(d.end))}<br>إجمالي الفوايد: <b class="num">${money(s.totalInterest)}</b>`; };
     body.querySelectorAll('input,select').forEach(i => i.addEventListener('input', prev)); prev();
+    $('#bImg').onclick = () => {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+      inp.onchange = async () => { if (!inp.files[0]) return; $('#bImg').textContent = '⏳ بقرا الصورة...';
+        let x; try { x = parseBankPlan((await ocrImages([inp.files[0]]))[0]); } catch (e) { $('#bImg').textContent = '📷 املا الخانات من صورة شاشة البنك'; return toast('محتاج نت أول مرة عشان قراءة الصور'); }
+        const set = (id, v) => { if (v != null && v !== '' && !(typeof v === 'number' && isNaN(v))) $(id).value = v; };
+        set('#bN', x.name); set('#bP', x.principal); set('#bMF', x.monthlyFixed); set('#bR', x.mRate); set('#bRem', x.remaining); set('#bM', x.months); if (x.end) set('#bEnd', fmtDate(x.end));
+        $('#bImg').textContent = x.ok ? '✅ اتملت من الصورة، راجعها واضغط حفظ' : '⚠️ اتملا جزء، كمّل الباقي'; prev();
+        if (x.outstanding) { const s = planSummary(read()); $('#bPrev').innerHTML += `<br>${Math.abs(s.outstanding - x.outstanding) < 1 ? '✅ مطابق للبنك' : '⚠️ البنك كاتب'} Outstanding <b class="num">${money(x.outstanding)}</b>`; }
+      };
+      inp.click();
+    };
     $('#bSave').onclick = () => {
       const x = read(); if (!(x.principal > 0) || !(x.monthlyFixed > 0)) return toast('اكتب المبلغ والقسط الشهري');
       if (!x._endOk || !x._remOk) return toast('اكتب Maturity date و Remaining installments');
       delete x._endOk; delete x._remOk; x.id = x.id || newId();
+      if (prefilled && !db.installments.some(y => y.id === x.id)) x.id = newId();
       const i = db.installments.findIndex(y => y.id === x.id); if (i >= 0) db.installments[i] = x; else db.installments.push(x);
       save(); runInstallments(); closeSheet(); setTab('cards'); toast('تم حفظ التقسيط');
     };
