@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '42';
+const APP_VERSION = '43';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2487,6 +2487,134 @@ function parseVoice(raw) {
   return { amount, type: income ? 'INCOME' : 'EXPENSE', categoryId, merchant: merchant.slice(0, 40), accountId: a && a.id };
 }
 // ينفّذ الأمر الصوتي ويرجّع الرد اللي هيتقال. الإضافة بتتسجّل مباشرة مع إمكانية التراجع.
+// ================= فهم بيانات البرنامج =================
+// المساعد بيقرا من البيانات الحية كل مرة (مفيش نسخة محفوظة)، فأي تعديل في البرنامج بيبان في رده على طول.
+const nrm = x => String(x || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/[ًٌٍَُِّْـ]/g, '');
+const r0 = v => (Math.round(v) || 0).toLocaleString('en-US');
+function periodOf(t) {
+  if (/(الشهر اللي فات|الشهر الماضي|الشهر اللي قبله|الشهر السابق)/.test(t)) { const [f, to] = monthRange(-1); return { f, to, label: 'الشهر اللي فات' }; }
+  if (/(النهارده|انهارده|اليوم)/.test(t)) return { f: dayStart(Date.now()), to: Date.now(), label: 'النهارده' };
+  if (/(امبارح)/.test(t)) { const f = dayStart(Date.now()) - DAY; return { f, to: f + DAY - 1, label: 'امبارح' }; }
+  if (/(الاسبوع|الأسبوع|اسبوع)/.test(t)) return { f: dayStart(Date.now()) - 6 * DAY, to: Date.now(), label: 'آخر 7 أيام' };
+  if (/(السنه|السنة)/.test(t)) return { f: new Date(new Date().getFullYear(), 0, 1).getTime(), to: Date.now(), label: 'السنة دي' };
+  const [f, to] = monthRange(0); return { f, to, label: 'الشهر ده' };
+}
+function catInText(t) {
+  let best = null;
+  db.categories.forEach(c => [lbl(c.name), ...(VOICE_SYN[c.name] || [])].map(nrm).forEach(w => { if (w.length >= 2 && new RegExp(`(^|\\s|ال|و|علي|على|ل|ب)${w}($|\\s)`).test(t) && (!best || w.length > best.w.length)) best = { c, w }; }));
+  return best && best.c;
+}
+function dataReply(t) {
+  if (/(ازاي|كيف|يعني ايه|اشرح|اضيف|اعمل ايه|هعمل ايه)/.test(t) || /(^|\s)لو\s/.test(t)) return null;
+  if (/\d/.test(t) && /(صرفت|دفعت|اشتريت|قبضت|استلمت|جالي)\s*\d/.test(t)) return null;
+  const P = periodOf(t); const list = inRange(P.f, P.to);
+  const ex = list.filter(x => x.type === 'EXPENSE'); const exp = ex.reduce((s0, x) => s0 + conv(x.amount, txCur(x)), 0);
+  // الأقساط
+  if (/(قسط|اقساط|تقسيط|التقسيط)/.test(t)) {
+    if (!db.installments.length) return { reply: 'مفيش أقساط متسجلة. ضيفها من البطاقات ← خطط التقسيط.' };
+    const nums = (t.replace(/(\d),(?=\d{3})/g, '$1').match(/\d+(\.\d+)?/g) || []).map(Number);
+    const pl = db.installments.find(x => nums.some(v => Math.abs(v - (+x.principal || 0)) < 1 || Math.abs(v - planSummary(x).monthly) < 1)) || db.installments.find(x => { const n0 = nrm(x.name).replace(/\s*\(.*\)/, '').trim(); return n0.length > 2 && t.includes(n0) && db.installments.filter(y => nrm(y.name).includes(n0)).length === 1; }) || null;
+    const one = x => { const ps = planSummary(x); const pd = planDates(x); const nx = ps.next;
+      return `${x.name}: القسط ${r0(ps.monthly)}، ${pd.left ? `باقي ${pd.left} شهر لحد ${ltr(fmtDate(pd.end))}` : 'خلص'}، والمتبقي من الأصل ${r0(ps.outstanding)}${nx ? `، والقسط الجاي ${ltr(fmtDate(nx.date))}` : ''}`; };
+    if (pl) return { reply: one(pl) + '.', go: () => setTab('cards'), goLabel: 'البطاقات' };
+    const act = db.installments.filter(x => nextInstallment(x));
+    const mon = act.reduce((s0, x) => s0 + planSummary(x).monthly, 0); const out = db.installments.reduce((s0, x) => s0 + planSummary(x).outstanding, 0);
+    const sal = prof().salary;
+    return { reply: `عندك ${act.length} تقسيط شغالين، بإجمالي ${r0(mon)} في الشهر${sal ? ` (${Math.round(mon / sal * 100)}% من مرتبك)` : ''}، والمتبقي من الأصل ${r0(out)}.\n` + act.map(one).join('.\n') + '.', go: () => setTab('cards'), goLabel: 'البطاقات' };
+  }
+  // البطاقات الائتمانية
+  if (/(كارت|الكارت|كريدت|بطاق|فيزا|visa|كشف|الحد|سداد)/.test(t)) {
+    const cs = cardsSummary(...monthRange(0)); if (!cs.length) return { reply: 'مفيش بطاقات ائتمان متسجلة.' };
+    return { reply: cs.map(c => `${lbl(c.a.name)}: ${c.due && c.due.amt > 0 ? `مطلوب ${r0(c.due.amt)} قبل ${ltr(fmtDate(c.due.date))} (بعد ${Math.max(0, Math.round((dayStart(c.due.date) - dayStart(Date.now())) / DAY))} يوم)، ` : 'مفيش مطلوب دلوقتي، '}الاستخدام ${r0(c.owed)} وأقساط باقية ${r0(c.instOut)}${c.lim ? `، يعني ${Math.round(c.used)}% من الحد ${r0(c.lim)}، والمتاح ${r0(c.avail)}` : ''}${c.instMonthly ? `، والقسط الشهري عليها ${r0(c.instMonthly)}` : ''}.`).join('\n'), go: () => setTab('cards'), goLabel: 'البطاقات' };
+  }
+  // تصنيف معيّن
+  const c = !/((^|\s)كل(\s|$)|تقسيم|بنود|توزيع)/.test(t) && catInText(t);
+  if (c && !c.isIncome && /(كام|قد ايه|اد ايه|صرفت|صارف|دفعت|مصاريف|مصروف)/.test(t)) {
+    const mine = ex.filter(x => x.categoryId === c.id); const v = mine.reduce((s0, x) => s0 + conv(x.amount, txCur(x)), 0);
+    const [lf, lt] = monthRange(-1); const last = inRange(lf, lt).filter(x => x.type === 'EXPENSE' && x.categoryId === c.id).reduce((s0, x) => s0 + conv(x.amount, txCur(x)), 0);
+    const bud = c.monthlyBudget > 0 && P.label === 'الشهر ده' ? `، وده ${Math.round(v / c.monthlyBudget * 100)}% من ميزانيته ${r0(c.monthlyBudget)}` : '';
+    const top = mine.sort((a, b) => b.amount - a.amount)[0];
+    return { reply: v ? `صرفت على ${lbl(c.name)} ${P.label} ${r0(v)} في ${mine.length} مرة، يعني ${exp ? Math.round(v / exp * 100) : 0}% من مصاريفك${bud}.${P.label === 'الشهر ده' && last ? ` الشهر اللي فات كان ${r0(last)}.` : ''}${top && mine.length > 1 ? ` أكبر مرة ${r0(top.amount)}${top.merchant ? ' في ' + top.merchant : ''}.` : ''}` : `ماصرفتش حاجة على ${lbl(c.name)} ${P.label}.`,
+      go: () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: c.id, period: 'MONTH' }; setTab('txns'); }, goLabel: 'الحركات' };
+  }
+  // تقسيم المصاريف على البنود
+  if (/(تقسيم|بنود|البنود|تصنيف|التصنيفات|علي ايه|على ايه|فلوسي بتروح|توزيع|مصاريفي|بصرف علي|صارف علي|بصرف على|صارف على)/.test(t)) {
+    const cats = catTotals(ex, 'EXPENSE'); const k = Object.keys(cats).sort((a, b) => cats[b] - cats[a]);
+    if (!k.length) return { reply: `مفيش مصاريف متسجلة ${P.label}.` };
+    return { reply: `صرفت ${P.label} ${r0(exp)}، متقسمين كده:\n` + k.map(id => `${cat(+id) ? lbl(cat(+id).name) : 'بدون تصنيف'} ${r0(cats[id])} (${Math.round(cats[id] / exp * 100)}%)`).join('\n'), go: () => openSpend(P.label === 'الشهر اللي فات' ? -1 : 0), goLabel: 'صفحة المصاريف' };
+  }
+  // المصاريف الثابتة
+  if (/(ثابت|الثابته|اشتراكات|متكرر)/.test(t)) {
+    const fx = db.recurring.filter(r => r.active && r.type === 'EXPENSE');
+    if (!fx.length) return { reply: 'مفيش مصاريف ثابتة متسجلة.' };
+    const sal = prof().salary;
+    return { reply: `مصاريفك الثابتة حوالي ${r0(fixedMonthly())} في الشهر${sal ? ` (${Math.round(fixedMonthly() / sal * 100)}% من مرتبك)` : ''}:\n` + fx.map(r => `${r.merchant || lbl((cat(r.categoryId) || {}).name || '')} ${r0(conv(r.amount, recCur(r)))}${r.nextDate ? `، الجاي ${ltr(fmtDate(r.nextDate))}` : ''}`).join('\n'), go: openRecurring, goLabel: 'المصاريف الثابتة' };
+  }
+  // الديون واللي ليا وعليا
+  if (/(ديون|دين|سلف|عليا|ليا|مديون|لك وعليك|ليك|عليك)/.test(t)) {
+    const ps = positions(); const ds = db.debts.filter(d => d.paid < d.amount);
+    return { reply: `ليك عند الناس ${r0(ps.recv)}، وعليك ديون ${r0(ps.pay)}، وعليك للبطاقات ${r0(ps.cardOwed)} استخدام + ${r0(ps.instOut)} أقساط باقية. صافي رصيدك بعد كل ده ${r0(ps.net)}.` + (ds.length ? '\n' + ds.map(d => `${d.lent ? d.person + ' عليه ليك' : 'عليك لـ ' + d.person} ${r0(d.amount - d.paid)}${d.dueDate ? ' قبل ' + ltr(fmtDate(d.dueDate)) : ''}`).join('\n') : '') };
+  }
+  // التنبيهات
+  if (/(اشعار|تنبيه|تحذير|خطر|مشاكل)/.test(t)) {
+    const al = hasProfile() ? riskAlerts().filter(x => x.lvl !== 'ok').slice(0, 4) : [];
+    const un = (db.notifLog || []).filter(x => !x.read).slice(0, 3);
+    if (!al.length && !un.length) return { reply: 'مفيش تنبيهات مهمة دلوقتي، وضعك تمام.' };
+    return { reply: [...al.map(x => x.text.replace(/<[^>]+>/g, '')), ...un.map(x => x.body)].join('\n'), go: () => setTab('ctrl'), goLabel: 'المتحكم المالي' };
+  }
+  // يوم القبض والتوقع
+  if (/(يوم القبض|هوصل|متوقع|التوقع|توقعات)/.test(t) && hasProfile()) {
+    const cp = cashPlan();
+    return { reply: `متوقع توصل يوم القبض ومعاك ${r0(cp.atPay)}، وقبلها عليك مدفوعات ثابتة ${r0(cp.fixedDue)}. الآمن تصرفه ${r0(cp.safeDaily)} في اليوم لمدة ${cp.cyc.left} يوم.${cp.zeroDay >= 0 && cp.zeroDay < cp.cyc.left ? ` ⚠️ فلوسك هتخلص بعد ${cp.zeroDay} يوم بالمعدل ده.` : ''}`, go: () => setTab('ctrl'), goLabel: 'المتحكم المالي' };
+  }
+  // رصيد حساب معيّن
+  const acc1 = db.accounts.find(a => !a.archived && nrm(lbl(a.name)).length > 2 && t.includes(nrm(lbl(a.name))));
+  if (acc1 && /(رصيد|فيه كام|معايا|كام)/.test(t)) return { reply: `رصيد ${lbl(acc1.name)} ${r0(balances()[acc1.id] || 0)} ${acc1.currency}.` };
+  // إجمالي المصاريف أو الدخل لفترة
+  if (/(صرفت كام|كام صرفت|كم صرفت|اجمالي المصاريف|مصروفي|المصروف)/.test(t)) {
+    const cats = catTotals(ex, 'EXPENSE'); const k = Object.keys(cats).sort((a, b) => cats[b] - cats[a]).slice(0, 3);
+    return { reply: exp ? `صرفت ${P.label} ${r0(exp)}. أكتر بنود: ${k.map(id => `${cat(+id) ? lbl(cat(+id).name) : 'بدون تصنيف'} ${r0(cats[id])}`).join('، ')}.` : `ماصرفتش حاجة ${P.label}.` };
+  }
+  if (/(دخلي|قبضت كام|الدخل|دخل)/.test(t) && !/\d/.test(t)) {
+    const inc = typeTotals(list)[0]; return { reply: `دخلك ${P.label} ${r0(inc)}${inc ? `، وصرفت ${r0(exp)}، يعني فاضل ${r0(inc - exp)}` : ''}.` };
+  }
+  return null;
+}
+// لقطة من كل بيانات البرنامج للمساعد الذكي (Gemini) لو فيه مفتاح
+function appSnapshot() {
+  const [f, to] = monthRange(0); const [lf, lt] = monthRange(-1); const ps = positions();
+  const cn = id => cat(+id) ? lbl(cat(+id).name) : 'بدون تصنيف';
+  const ct = l => Object.fromEntries(Object.entries(catTotals(l, 'EXPENSE')).map(([id, v]) => [cn(id), Math.round(v)]));
+  const cp = hasProfile() ? cashPlan() : null;
+  return { today: fmtDate(Date.now()), currency: base(), profile: { salary: prof().salary, payday: prof().payday, savingRate: db.prefs.savingRate || 20 },
+    accounts: db.accounts.filter(a => !a.archived).map(a => ({ name: lbl(a.name), type: a.type, balance: Math.round(balances()[a.id] || 0), currency: a.currency })),
+    position: { total: Math.round(ps.total), afterMonthInstallments: Math.round(ps.afterInst), receivable: Math.round(ps.recv), payable: Math.round(ps.pay), installmentsOutstanding: Math.round(ps.instOut), net: Math.round(ps.net) },
+    thisMonth: { income: Math.round(typeTotals(inRange(f, to))[0]), expense: Math.round(typeTotals(inRange(f, to))[1]), byCategory: ct(inRange(f, to).filter(x => x.type === 'EXPENSE')) },
+    lastMonth: { income: Math.round(typeTotals(inRange(lf, lt))[0]), expense: Math.round(typeTotals(inRange(lf, lt))[1]), byCategory: ct(inRange(lf, lt).filter(x => x.type === 'EXPENSE')) },
+    recent: db.txns.slice().sort((a, b) => b.date - a.date).slice(0, 25).map(x => ({ d: fmtDate(x.date), type: x.type, amount: x.amount, cat: cn(x.categoryId), merchant: x.merchant || '', fixed: isFixedTxn(x) })),
+    cards: cardsSummary(f, to).map(c => ({ name: lbl(c.a.name), limit: c.lim, used: Math.round(c.owed), installmentsLeft: Math.round(c.instOut), usedPct: Math.round(c.used), available: Math.round(c.avail), due: c.due && { amount: Math.round(c.due.amt), date: fmtDate(c.due.date) } })),
+    installments: db.installments.map(x => { const s0 = planSummary(x); const d = planDates(x); return { name: x.name, monthly: Math.round(s0.monthly), monthsLeft: d.left, end: fmtDate(d.end), outstanding: Math.round(s0.outstanding), next: s0.next && fmtDate(s0.next.date) }; }),
+    fixed: db.recurring.filter(r => r.active).map(r => ({ name: r.merchant || cn(r.categoryId), amount: r.amount, type: r.type, period: r.period, next: r.nextDate && fmtDate(r.nextDate) })),
+    debts: db.debts.filter(d => d.paid < d.amount).map(d => ({ person: d.person, left: d.amount - d.paid, theyOweMe: !!d.lent, due: d.dueDate && fmtDate(d.dueDate) })),
+    budgets: db.categories.filter(c => c.monthlyBudget > 0).map(c => ({ cat: lbl(c.name), budget: c.monthlyBudget })),
+    goals: db.goals.map(g => ({ name: g.name, saved: g.saved, target: g.target })),
+    forecast: cp && { level: cp.level, safeDaily: Math.round(cp.safeDaily), daysToPayday: cp.cyc.left, balanceAtPayday: Math.round(cp.atPay), fixedDueBeforePayday: Math.round(cp.fixedDue) },
+    alerts: hasProfile() ? riskAlerts().map(x => x.text.replace(/<[^>]+>/g, '')) : [] };
+}
+async function askAI(question) {
+  const hist = (db.chat || []).slice(-8).map(m => ({ role: m.me ? 'user' : 'model', parts: [{ text: m.text }] }));
+  const body = { systemInstruction: { parts: [{ text: 'إنت مساعد مالي شخصي جوه تطبيق «محفظتي». رد بالعامية المصرية، باختصار (3 جمل بالكتير إلا لو اتطلب تفصيل)، وبالأرقام من البيانات دي بس، ومتألفش أرقام. لو المعلومة مش موجودة قول كده. البيانات الحالية (JSON):\n' + JSON.stringify(appSnapshot()) }] },
+    contents: [...hist, { role: 'user', parts: [{ text: question }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 400 } };
+  let last;
+  for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'x-goog-api-key': db.prefs.gmKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r.ok) { const j = await r.json(); return ((((j.candidates || [])[0] || {}).content || {}).parts || []).map(p => p.text || '').join('').trim(); }
+    let msg = ''; try { msg = ((await r.json()).error || {}).message || ''; } catch (e) { } last = new Error('gemini ' + r.status + ' ' + msg);
+    if (r.status !== 404) break;
+  }
+  throw last;
+}
+
 function handleVoice(text) {
   const t = normDigits(text).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
   if (/(يومي العادي|زي العادي|زي كل يوم|نفس كل يوم|زي امبارح)/.test(t)) {
@@ -2497,6 +2625,7 @@ function handleVoice(text) {
     if (!r.n) return { reply: 'لسه مش عارف يومك العادي، سجّل مصاريفك كام يوم الأول' };
     return { reply: `سجّلت ${Math.round(r.total)} جنيه تقديري لـ ${days.length === 1 ? 'يوم' : days.length + ' أيام'}، وتقدر تعدّلها من الحركات` };
   }
+  const dr = dataReply(t); if (dr) return dr;
   const hr = helpReply(t); if (hr) return hr;
   const p = dailyPlan();
   if (/(فاضل|باقي|متبقي|اقدر اصرف|ممكن اصرف|مسموح)/.test(t)) {
@@ -2570,6 +2699,13 @@ function handleVoice(text) {
     return { reply: `إجمالي رصيدك ${Math.round(tot)} ${base() === 'EGP' ? 'جنيه' : base()}` };
   }
   const r = parseVoice(text);
+  // سؤال افتراضي («لو اشتريت...»، «ينفع أشتري...») مايتسجلش كمصروف
+  if (/(^|\s)(لو|ينفع|اقدر اشتري|ممكن اشتري|هعمل ايه|اعمل ايه)(\s|$)/.test(t)) {
+    if (db.prefs.gmKey) return { reply: '...', ai: askAI(text) };
+    if (r.amount > 0) { const cp = hasProfile() ? cashPlan() : null; const after = cp ? cp.atPay - r.amount : null;
+      return { reply: `${r.amount} = ${monthTime(r.amount) || 'مبلغ'}.${cp ? ` لو اشتريته، متوقع توصل يوم القبض ومعاك ${r0(after)}${after < cp.cushion ? '، وده تحت حد الأمان، فالأحسن تستنى أو تقسّطه' : '، يعني تقدر'}.` : ''}` }; }
+  }
+  if (db.prefs.gmKey && (r.question || !(r.amount > 0))) return { reply: '...', ai: askAI(text) };
   if (r.question) { const d = document.createElement('div'); askNl(text, d); return { reply: d.textContent.replace('عرض', '').trim() || 'ماعرفتش أجاوب على ده' }; }
   if (!(r.amount > 0)) return { reply: 'مافهمتش. قول مثلاً: صرفت 200 أكل، أو فاضلي كام، أو قول «أوامر» تعرف أقدر أعمل إيه' };
   const accountId = r.accountId || (db.accounts.find(a => !a.archived && a.type !== 'CREDIT') || db.accounts[0] || {}).id;
@@ -2616,6 +2752,7 @@ function quickVoice() {
     if (!heard.trim()) { voiceBubble('ماسمعتش حاجة', 'اضغط على المايك واتكلم تاني'); return; }
     const r = handleVoice(heard);
     if (r.silent) return;
+    if (r.ai) { voiceBubble('«' + heard + '»', 'بفكّر...'); r.ai.then(x => x || 'ماعرفتش').catch(() => 'مافهمتش، جرّب تاني').then(x => { voiceBubble('«' + heard + '»', x); speak(x); }); return; }
     voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); setTimeout(() => speak(r.reply), 700);
   };
   try { vRec.start(); } catch (e) { vRec = null; $('#vfab').classList.remove('on'); openVoice(); }
@@ -2642,6 +2779,7 @@ function openVoice() {
       const text = $('#vText').value.trim(); if (!text) return toast('قول أو اكتب حاجة الأول');
       const r = handleVoice(text);
       if (r.silent) return;
+      if (r.ai) { out.innerHTML = insH('sparkle', 'بفكّر...'); r.ai.then(x => x || 'ماعرفتش').catch(() => 'مافهمتش، جرّب تاني').then(x => { out.innerHTML = insH('speaker', esc(x)); speak(x); }); $('#vText').value = ''; return; }
       out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '') + (r.go ? `<button class="btn small primary" id="vOpen">افتح ${esc(r.goLabel)}</button>` : '');
       if (r.go) $('#vOpen').onclick = r.go;
       setTimeout(() => speak(r.reply), 600);
@@ -2669,7 +2807,7 @@ function openVoice() {
 // ================= شات المساعد =================
 // زي أي شات AI: رسايل فوق، وتحت خانة كتابة + مايك. الرد بيظهر مكتوب وبيتقري بالصوت.
 const chatGo = new Map();
-const CHAT_SUGG = ['فاضلي كام؟', 'صرفت كام النهارده؟', 'صرفت 100 أكل', 'وضعي المالي عامل إيه؟', 'أكتر حاجة بصرف عليها', 'الأقساط', 'إزاي أضيف مصروف ثابت؟', 'جولة في البرنامج'];
+const CHAT_SUGG = ['فاضلي كام؟', 'تقسيم المصاريف على البنود', 'الأقساط', 'الكارت عليه كام؟', 'صرفت كام على الأكل؟', 'المصاريف الثابتة', 'هوصل يوم القبض بكام؟', 'التنبيهات', 'عليا كام؟', 'جولة في البرنامج'];
 let chatRec = null;
 function openChat(listen) {
   let el = $('#chat');
@@ -2700,6 +2838,12 @@ function openChat(listen) {
     if (/^(جوله|جولة)( في البرنامج)?$/.test(txt)) { closeChat(); return startTour(); }
     let r; try { r = handleVoice(txt); } catch (e) { console.error(e); r = { reply: 'حصلت مشكلة وأنا بنفّذ، جرّب تاني' }; }
     if (r.silent) return;
+    if (r.ai) {
+      const m = add(false, 'بفكّر...'); $('#cSt').textContent = 'بفكّر...';
+      r.ai.then(txt => { m.text = txt || 'ماعرفتش أجاوب على ده'; }).catch(e => { console.warn(e); m.text = 'مافهمتش. جرّب تسأل عن: البنود، الأقساط، الكارت، الثابت، فاضلي كام، أو قول «صرفت 200 أكل».'; })
+        .then(() => { save(); draw(); $('#cSt').textContent = 'اكتب أو اتكلم'; speak(m.text); });
+      return;
+    }
     const m = add(false, r.reply, { undo: r.undoId || null, goLabel: r.goLabel || '' });
     if (r.go) { chatGo.set(m.id, r.go); draw(); }
     speak(r.reply);
