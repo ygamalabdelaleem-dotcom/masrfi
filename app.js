@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '38';
+const APP_VERSION = '39';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1287,7 +1287,7 @@ function openSettings() {
     $('#stVoices').onclick = openVoicePicker;
     $('#stVoiceOn').onchange = e => { db.prefs.voiceOff = !e.target.checked; save(); if (!db.prefs.voiceOff) speak('تم تشغيل الصوت'); else speechSynthesis && speechSynthesis.cancel(); };
     document.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => { db.prefs.voiceRate = +b.dataset.vr; save(); document.querySelectorAll('[data-vr]').forEach(x => x.classList.toggle('on', x === b)); speak('ده صوتي بالسرعة دي'); });
-    $('#stVoiceTest').onclick = () => speak('صرفت النهارده 250 جنيه، وفاضلك 1500 لحد القبض');
+    $('#stVoiceTest').onclick = () => speakForce('صرفت النهارده 250 جنيه، وفاضلك 1500 لحد القبض');
     $('#stVoiceDiag').onclick = () => voiceDiag($('#vDiag'));
     $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
   });
@@ -2270,7 +2270,10 @@ function pcmToWav(b64, rate = 24000) {
 }
 function gmError(e) {
   const m = String(e.message || e);
-  if (/ 400| 403/.test(m)) return 'مفتاح Gemini مش شغال. اتأكد إنك نسخته صح';
+  if (/api key|API_KEY/i.test(m)) return 'مفتاح Gemini غلط. انسخه تاني من aistudio.google.com بالكامل (بيبدأ بـ AIza)';
+  if (/location|region|country/i.test(m)) return 'جوجل مش متاحة Gemini في بلدك من غير VPN';
+  if (/ 403/.test(m)) return 'المفتاح مش مسموح له يستخدم Gemini. اعمل مفتاح جديد من AI Studio';
+  if (/ 400/.test(m)) return 'Gemini رفض الطلب: ' + m.replace(/^gemini \d+ ?/, '');
   if (/ 429/.test(m)) return 'خلص الحد المجاني لـ Gemini النهارده';
   if (/ 404/.test(m)) return 'موديل الصوت مش متاح على المفتاح ده';
   if (/fetch|network|Load failed/i.test(m)) return 'مفيش نت أو جوجل مش راد';
@@ -2290,7 +2293,10 @@ async function gmSpeak(text, onEnd, voice) {
     for (const m of [db.prefs.gmModel, ...GM_MODELS].filter(Boolean)) {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'x-goog-api-key': db.prefs.gmKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (r.ok) { db.prefs.gmModel = m; break; }
-      last = r.status; if (r.status !== 404) break;
+      let msg = ''; try { msg = ((await r.json()).error || {}).message || ''; } catch (e) { }
+      last = r.status + (msg ? ' ' + msg : '');
+      // المفتاح الغلط مالوش لازمة نجرّب بيه موديل تاني
+      if (r.status !== 404 && !(r.status === 400 && !/api key|API_KEY/i.test(msg))) break;
     }
     if (!r.ok) throw new Error('gemini ' + (last || r.status));
     const j = await r.json();
@@ -2323,7 +2329,9 @@ function unlockSpeech() {
   try { const u = new SpeechSynthesisUtterance('ا'); u.volume = 0; u.rate = 2; u.lang = 'ar-SA'; speechSynthesis.speak(u); } catch (e) { }
 }
 ['touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockSpeech, { capture: true, passive: true }));
+const speakForce = (...a) => { speak.force = true; try { speak(...a); } finally { speak.force = false; } };
 function speak(text, onEnd, plain) {
+  if (speak.force && db.prefs.voiceOff) { db.prefs.voiceOff = false; save(); toast('شغّلت صوت المساعد'); const c = $('#stVoiceOn'); if (c) c.checked = true; }
   if (db.prefs.voiceOff) { onEnd && setTimeout(onEnd, 2500); return; }
   if (!plain && !speak.dev && (speak.gm || gmOn())) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
@@ -2421,17 +2429,18 @@ function openVoicePicker() {
     <p class="muted">كل صوت بياخد 2-3 ثواني. المفتاح المجاني بيسمح بعدد قليل في الدقيقة، فلو جربت أصوات كتير ورا بعض وماشتغلش، استنى دقيقة وجرّب تاني.</p>
 `, () => {
     if ($('#vBadReset')) $('#vBadReset').onclick = () => { db.prefs.badVoices = []; save(); openVoicePicker(); };
-    document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak.dev = true; speak(VOICE_SAMPLE); speak.only = null; speak.dev = false; });
+    document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak.dev = true; speakForce(VOICE_SAMPLE); speak.only = null; speak.dev = false; });
     document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; db.prefs.gmVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
-    $('#gmSave').onclick = () => { db.prefs.gmKey = $('#gmKey').value.trim(); if (!db.prefs.gmVoice || db.prefs.gmVoice === 'off') db.prefs.gmVoice = 'Kore'; save(); speak.gm = db.prefs.gmVoice; speak(VOICE_SAMPLE); speak.gm = null; openVoicePicker(); };
-    const gmRead = () => { if ($('#gmKey').value.trim()) db.prefs.gmKey = $('#gmKey').value.trim(); return !!db.prefs.gmKey || (toast('حط مفتاح Gemini الأول'), false); };
-    document.querySelectorAll('[data-gmplay]').forEach(b => b.onclick = () => { if (!gmRead()) return; toast('ثانية...'); speak.gm = b.dataset.gmplay; speak(VOICE_SAMPLE); speak.gm = null; });
+    $('#gmSave').onclick = () => { db.prefs.gmKey = $('#gmKey').value.replace(/\s+/g, ''); if (!db.prefs.gmVoice || db.prefs.gmVoice === 'off') db.prefs.gmVoice = 'Kore'; save(); speak.gm = db.prefs.gmVoice; speakForce(VOICE_SAMPLE); speak.gm = null; openVoicePicker(); };
+    const gmRead = () => { if ($('#gmKey').value.trim()) db.prefs.gmKey = $('#gmKey').value.replace(/\s+/g, ''); return !!db.prefs.gmKey || (toast('حط مفتاح Gemini الأول'), false); };
+    document.querySelectorAll('[data-gmplay]').forEach(b => b.onclick = () => { if (!gmRead()) return; toast('ثانية...'); speak.gm = b.dataset.gmplay; speakForce(VOICE_SAMPLE); speak.gm = null; });
     document.querySelectorAll('[data-gmpick]').forEach(b => b.onclick = () => { if (!gmRead()) return; db.prefs.gmVoice = b.dataset.gmpick; save(); openVoicePicker(); toast('تم اختيار ' + b.dataset.gmpick); });
   });
 }
 function voiceSettingsHtml() {
   const list = arVoices();
   return `<h3 style="margin-top:16px">صوت المساعد</h3>
+    ${db.prefs.voiceOff ? '<div class="insight w"><div class="grow"><b>🔇 صوت المساعد مقفول</b>، عشان كده مش بتسمع حاجة. علّم على الخانة اللي تحت عشان تشغّله.</div></div>' : ''}
     <label class="row"><input type="checkbox" id="stVoiceOn" ${db.prefs.voiceOff ? '' : 'checked'}> المساعد يرد بالصوت (لو قفلته هيرد بالكتابة بس)</label>
     <button class="btn primary block" id="stVoices" style="margin-top:8px">${ic('speaker')} اسمع أمثلة الأصوات واختار (${list.length})</button>
     <label class="f">السرعة</label><div class="chips">${[[0.8, 'بطيء'], [0.95, 'عادي'], [1.1, 'سريع']].map(([r, t]) => `<button class="chip ${(db.prefs.voiceRate || 0.95) === r ? 'on' : ''}" data-vr="${r}">${t}</button>`).join('')}</div>
@@ -3262,6 +3271,7 @@ async function checkReminder() {
 setInterval(checkNotifs, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNotifs(); });
 
+if (!db.prefs.voiceFix39) { db.prefs.voiceFix39 = true; db.prefs.voiceOff = false; if (db.prefs.gmVoice && !db.prefs.gmKey) db.prefs.gmVoice = 'off'; save(); }
 showLock();
 runRecurring();
 runInstallments();
