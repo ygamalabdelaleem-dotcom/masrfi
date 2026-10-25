@@ -306,3 +306,34 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary); 
   background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px; box-shadow: 0 10px 28px rgba(15,27,45,.18); font-size: 14px; }
 .vbubble .x { width: 26px; height: 26px; font-size: 12px; }
 .vb-text { margin: 4px 0 6px; }
+/* المتحكم المالي */
+.insight.lv-danger { background: color-mix(in srgb, var(--exp) 10%, var(--card)); }
+.insight.lv-danger .ib { background: color-mix(in srgb, var(--exp) 18%, transparent); color: var(--exp); }
+.insight.lv-warn { background: color-mix(in srgb, var(--warn) 10%, var(--card)); }
+.insight.lv-warn .ib { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.insight.lv-ok { background: color-mix(in srgb, var(--inc) 10%, var(--card)); }
+.insight.lv-ok .ib { background: color-mix(in srgb, var(--inc) 18%, transparent); color: var(--inc); }
+.tagx { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--card); border-radius: 6px; padding: 1px 6px; margin-inline-end: 2px; }
+.risk { cursor: pointer; border: 1px solid var(--line); }
+.risk.lvl-danger { border-color: color-mix(in srgb, var(--exp) 45%, transparent); }
+.risk.lvl-warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.risk h3 { margin-bottom: 8px; }
+.hero.lvl-danger { background: linear-gradient(135deg, #5a0f12, #a3262a); }
+.hero.lvl-warn { background: linear-gradient(135deg, #5a3500, #a76200); }
+.hero.lvl-danger .ring span { background: #a3262a; }
+.hero.lvl-warn .ring span { background: #a76200; }
+svg.fc { width: 100%; height: 130px; display: block; margin-top: 4px; }
+svg.fc line { stroke-width: 1; vector-effect: non-scaling-stroke; }
+svg.fc .z { stroke: var(--line); stroke-width: 1.5; }
+svg.fc .c { stroke: var(--warn); stroke-dasharray: 4 4; }
+svg.fc .p { stroke: var(--muted); stroke-dasharray: 2 3; }
+svg.fc .l { fill: none; stroke: var(--primary); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+svg.fc .l.warn { stroke: var(--warn); } svg.fc .l.danger { stroke: var(--exp); }
+svg.fc .a { fill: color-mix(in srgb, var(--primary) 12%, transparent); stroke: none; }
+svg.fc .a.warn { fill: color-mix(in srgb, var(--warn) 12%, transparent); } svg.fc .a.danger { fill: color-mix(in srgb, var(--exp) 12%, transparent); }
+.fc-k { font-size: 11.5px; margin-top: 4px; flex-wrap: wrap; }
+.lg { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--primary); vertical-align: middle; margin-inline-end: 3px; }
+.lg.c { border-top: 2px dashed var(--warn); } .lg.p { border-top: 2px dotted var(--muted); }
+.hrs { text-align: center; min-height: 18px; margin-top: 4px; }
+.chip.fx { border-color: var(--primary); color: var(--primary); }
+.section-title.row { margin-top: 14px; }
