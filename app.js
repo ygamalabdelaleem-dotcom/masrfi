@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '26';
+const APP_VERSION = '27';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -834,7 +834,6 @@ function renderCards() {
       </div>`;
     }).join('') : '<div class="card empty">لا توجد خطط تقسيط. اضغط «تقسيط جديد» من البطاقة أو من هنا.</div>'}
     <div class="btns"><button class="btn primary" id="plImg">📷 تقسيط من صورة البنك</button><button class="btn" id="plNew">＋ خطة تقسيط</button></div>
-    <button class="btn block" id="plCode" style="margin-top:8px">📋 لصق كود تقسيط</button>
     <p class="muted">تقدر تختار كذا صورة مرة واحدة، وكل صورة بتتحوّل لتقسيط. لو التقسيط موجود بيتحدّث بس.</p>`;
   view().querySelectorAll('[data-pay]').forEach(b => b.onclick = () => {
     const a = acc(+b.dataset.pay); const owed = Math.max(0, -(balances()[a.id] || 0));
@@ -847,7 +846,6 @@ function renderCards() {
   $('#ccNew').onclick = () => editAccount(null, true);
   $('#plNew').onclick = () => editPlan();
   $('#plImg').onclick = () => addPlansFromImages();
-  $('#plCode').onclick = () => { const c = prompt('الصق كود التقسيط هنا'); if (!c) return; const r = importPlanCode(c); toast(r.added || r.updated ? `اتضاف ${r.added} تقسيط${r.updated ? ` واتحدّث ${r.updated}` : ''}` : 'الكود مش صحيح'); renderCards(); };
 }
 
 // ===== قراءة صورة شاشة التقسيط من تطبيق البنك (OCR على الجهاز بـ Tesseract) =====
