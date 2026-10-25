@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '21';
+const APP_VERSION = '22';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1927,6 +1927,7 @@ function gmError(e) {
 }
 async function gmSpeak(text, onEnd, voice) {
   const say = speechText(text, true); if (!say) return;
+  const tok = speak.token;
   const v = voice || db.prefs.gmVoice || 'Kore';
   const key = 'gm' + v + say;
   let url = azCache.get(key);
@@ -1948,6 +1949,7 @@ async function gmSpeak(text, onEnd, voice) {
     if (azCache.size > 40) azCache.delete(azCache.keys().next().value);
     azCache.set(key, url);
   }
+  if (tok !== speak.token) return; // اتطلب صوت تاني بعده
   const a = azPlayer(); a.pause(); a.src = url; a.playbackRate = db.prefs.voiceRate > 1 ? 1.1 : db.prefs.voiceRate < 0.9 ? 0.9 : 1; a.onended = () => onEnd && onEnd();
   await a.play();
 }
@@ -1962,13 +1964,13 @@ function unlockSpeech() {
 ['touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockSpeech, { capture: true, passive: true }));
 function speak(text, onEnd, plain) {
   if (db.prefs.voiceOff) { onEnd && setTimeout(onEnd, 2500); return; }
-  if (!plain && (speak.gm || (gmOn() && !speak.az))) {
+  if (!plain && !speak.dev && (speak.gm || (gmOn() && !speak.az))) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     const voice = speak.gm; speak.token = (speak.token || 0) + 1;
     gmSpeak(text, onEnd, voice).catch(e => { console.warn(e); toast(gmError(e)); if (voice) return; else if (azOn()) { speak.az = db.prefs.azVoice; speak(text, onEnd); speak.az = null; } else speak(text, onEnd, true); });
     return;
   }
-  if (!plain && (azOn() || speak.az)) {
+  if (!plain && !speak.dev && (azOn() || speak.az)) {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     const voice = speak.az; speak.token = (speak.token || 0) + 1;
     azSpeak(text, onEnd, voice).catch(e => { console.warn(e); if (!speak.az) speak(text, onEnd, true); else toast('صوت Azure ماشتغلش: اتأكد من المفتاح والمنطقة والنت'); });
@@ -2015,6 +2017,7 @@ function openVoicePicker() {
     <h3>أصوات Google Gemini (زي AI Studio)</h3>
     <div class="list">${Object.entries(GM_VOICES).map(([k, n]) => `<div class="item"><button class="btn small" data-gmplay="${k}">${ic('speaker')}</button><div class="grow"><div>${n}</div><div class="muted">${db.prefs.gmKey ? 'Gemini · محتاج نت' : 'حط المفتاح تحت الأول'}</div></div>
       <button class="chip ${gmOn() && db.prefs.gmVoice === k ? 'on' : ''}" data-gmpick="${k}">${gmOn() && db.prefs.gmVoice === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
+    <p class="muted">كل صوت بياخد 2-3 ثواني. المفتاح المجاني بيسمح بعدد قليل في الدقيقة، فلو جربت أصوات كتير ورا بعض وماشتغلش، استنى دقيقة وجرّب تاني.</p>
     <details style="margin:8px 0 14px" ${db.prefs.gmKey ? '' : 'open'}><summary class="muted">مفتاح Gemini (مرة واحدة)</summary>
       <label class="f">API Key</label><input class="in" id="gmKey" value="${esc(db.prefs.gmKey || '')}" autocomplete="off" placeholder="AIza...">
       <button class="btn block" id="gmSave" style="margin-top:8px">حفظ المفتاح</button>
@@ -2032,7 +2035,7 @@ function openVoicePicker() {
     <h3>أصوات الآيفون (من غير نت)</h3>
     <div class="list">${row('', 'تلقائي', 'أحسن صوت متاح', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>
     ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}`, () => {
-    document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak(VOICE_SAMPLE); speak.only = null; });
+    document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak.dev = true; speak(VOICE_SAMPLE); speak.only = null; speak.dev = false; });
     document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; db.prefs.azVoice = 'off'; db.prefs.gmVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
     $('#gmSave').onclick = () => { db.prefs.gmKey = $('#gmKey').value.trim(); if (!db.prefs.gmVoice || db.prefs.gmVoice === 'off') db.prefs.gmVoice = 'Kore'; save(); speak.gm = db.prefs.gmVoice; speak(VOICE_SAMPLE); speak.gm = null; openVoicePicker(); };
     const gmRead = () => { if ($('#gmKey').value.trim()) db.prefs.gmKey = $('#gmKey').value.trim(); return !!db.prefs.gmKey || (toast('حط مفتاح Gemini الأول'), false); };
