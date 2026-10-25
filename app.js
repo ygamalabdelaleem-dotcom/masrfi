@@ -1068,6 +1068,7 @@ function openSettings() {
     $('#stSmsHow').onclick = openSmsAutomation;
     $('#stProf').onclick = () => openOnboarding(true);
     $('#stVoices').onclick = openVoicePicker;
+    $('#stVoiceOn').onchange = e => { db.prefs.voiceOff = !e.target.checked; save(); if (!db.prefs.voiceOff) speak('تم تشغيل الصوت'); else speechSynthesis && speechSynthesis.cancel(); };
     document.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => { db.prefs.voiceRate = +b.dataset.vr; save(); document.querySelectorAll('[data-vr]').forEach(x => x.classList.toggle('on', x === b)); speak('ده صوتي بالسرعة دي'); });
     $('#stVoiceTest').onclick = () => speak('صرفت النهارده 250 جنيه، وفاضلك 1500 لحد القبض');
     $('#stRates').onclick = openRates; $('#stPin').onclick = openPin; $('#stBackup').onclick = openBackup;
@@ -1757,10 +1758,21 @@ function arVoices() {
 }
 if ('speechSynthesis' in window) { arVoices(); speechSynthesis.onvoiceschanged = arVoices; }
 // تنضيف النص قبل القراية: الأرقام من غير كسور وفواصل، ومن غير إيموجي ورموز
+// الأصوات العربي في الآيفون فصحى، فالكلام العامي بيتنطق غلط ومقطّع. قبل القراية بنحوّل الكلمات العامية لفصحى بسيطة.
+const SPOKEN = [['النهارده', 'اليوم'], ['انهارده', 'اليوم'], ['بكرة', 'غداً'], ['امبارح', 'أمس'], ['فاضلك', 'المتبقي لك'], ['فاضلي', 'المتبقي لي'], ['فاضل', 'متبقي'],
+  ['عشان', 'لكي'], ['علشان', 'لكي'], ['مفيش', 'لا يوجد'], ['ماسجّلتش', 'لم تسجل'], ['ماسجلتش', 'لم تسجل'], ['ماصرفتش', 'لم تصرف'], ['اتلغت', 'تم الإلغاء'],
+  ['دلوقتي', 'الآن'], ['كده', 'هكذا'], ['ده', 'هذا'], ['دي', 'هذه'], ['دول', 'هؤلاء'], ['إيه', 'ماذا'], ['ايه', 'ماذا'], ['إزاي', 'كيف'], ['ازاي', 'كيف'], ['فين', 'أين'],
+  ['كام', 'كم'], ['عاوز', 'تريد'], ['عايز', 'تريد'], ['بتاع', 'الخاص ب'], ['اللي', 'الذي'], ['هتصرف', 'ستصرف'], ['هتخلص', 'ستنتهي'], ['هينزل', 'سينزل'], ['هيظهر', 'سيظهر'],
+  ['هيظهرلك', 'سيظهر لك'], ['بيتسجّل', 'يُسجل'], ['بيتسجل', 'يُسجل'], ['سجّلت', 'سجلت'], ['خلي بالك', 'انتبه'], ['تقدر', 'يمكنك'], ['حاجة', 'شيء'], ['حاجه', 'شيء'],
+  ['أكتر', 'أكثر'], ['اكتر', 'أكثر'], ['أقل من', 'أقل من'], ['يعني', 'أي'], ['لسه', 'ما زال'], ['بس', 'فقط'], ['قول', 'قل'], ['اضغط', 'اضغط'], ['المية', 'المئة'], ['تمام', 'حسناً'],
+  ['شغلك', 'عملك'], ['شغل', 'عمل'], ['القبض', 'الراتب'], ['المرتب', 'الراتب'], ['مرتبك', 'راتبك'], ['وفّرت', 'وفرت'], ['هنا', 'هنا']];
+const SPOKEN_RE = SPOKEN.map(([a, b]) => [new RegExp(`(^|[\\s،.؟!:])(و?)${a}(?=$|[\\s،.؟!:])`, 'g'), `$1$2${b}`]);
 function speechText(text) {
-  return String(text).replace(/<[^>]+>/g, '').replace(/[⁦-⁩]/g, '')
+  let t = String(text).replace(/<[^>]+>/g, '').replace(/[⁦-⁩]/g, '')
     .replace(/(\d),(?=\d{3})/g, '$1').replace(/(\d+)\.00\b/g, '$1').replace(/(\d+)\.(\d)\d?\b/g, (m, a, b) => +b ? m : a)
-    .replace(/\bEGP\b/g, 'جنيه').replace(/%/g, ' في المية').replace(/[\u{1F300}-\u{1FAFF}☀-➿️📌•«»]/gu, '').replace(/\s+/g, ' ').trim();
+    .replace(/\bEGP\b/g, 'جنيه').replace(/%/g, ' في المئة').replace(/[\u{1F300}-\u{1FAFF}☀-➿️📌•«»()]/gu, '').replace(/ـ/g, '');
+  SPOKEN_RE.forEach(([re, to]) => { t = t.replace(re, to); });
+  return t.replace(/\s+/g, ' ').trim();
 }
 // الآيفون: لازم أول نطق يحصل من لمسة، والـ cancel قبل speak على طول بيضيّع الكلام،
 // وبعد المايك محتاج لحظة عشان الصوت يرجع للسماعة. لو الصوت المختار ماشتغلش بنرجع للصوت الافتراضي.
@@ -1773,26 +1785,31 @@ function unlockSpeech() {
 ['touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockSpeech, { capture: true, passive: true }));
 function speak(text, onEnd, plain) {
   if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
+  if (db.prefs.voiceOff) { onEnd && setTimeout(onEnd, 2500); return; }
   const say = speechText(text); if (!say) return;
   const only = speak.only;
   const busy = speechSynthesis.speaking || speechSynthesis.pending;
   if (busy) speechSynthesis.cancel();
+  // جمل قصيرة واحدة ورا التانية: الآيفون بيقطّع في الجمل الطويلة
+  const parts = say.replace(/([.؟!])\s+/g, '$1\n').split('\n').map(x => x.trim()).filter(Boolean);
+  const token = speak.token = (speak.token || 0) + 1;
   setTimeout(() => {
-    const u = new SpeechSynthesisUtterance(say);
     const list = arVoices();
     const v = plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI)) || list[0];
-    try { if (v) u.voice = v; } catch (e) { }
-    u.lang = v ? v.lang : 'ar-EG'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1; u.volume = 1;
-    let started = false;
-    u.onstart = () => { started = true; };
-    u.onend = () => { if (curUtter === u) curUtter = null; onEnd && onEnd(); };
-    u.onerror = e => { if (!started && !plain && e.error !== 'interrupted' && e.error !== 'canceled') speak(text, onEnd, true); };
-    curUtter = u; // لازم نحتفظ بيه وإلا الآيفون ممكن يمسحه قبل ما يخلص
-    speechSynthesis.resume && speechSynthesis.resume();
-    speechSynthesis.speak(u);
-    // لو ماابتداش خلال ثانيتين، نجرب بالصوت الافتراضي
-    if (!plain) setTimeout(() => { if (!started && curUtter === u) { speechSynthesis.cancel(); speak(text, onEnd, true); } }, 2000);
-  }, busy ? 120 : 30);
+    let i = 0;
+    const next = () => {
+      if (token !== speak.token) return;
+      if (i >= parts.length) { curUtter = null; onEnd && onEnd(); return; }
+      const u = new SpeechSynthesisUtterance(parts[i++]);
+      try { if (v) u.voice = v; } catch (e) { }
+      u.lang = v ? v.lang : 'ar-SA'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1; u.volume = 1;
+      u.onend = next;
+      u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; if (!plain && i === 1) { speak.token++; speak(text, onEnd, true); } else next(); };
+      curUtter = u; // لازم نحتفظ بيه وإلا الآيفون ممكن يمسحه قبل ما يخلص
+      speechSynthesis.speak(u);
+    };
+    next();
+  }, busy ? 150 : 30);
 }
 // أمثلة الأصوات: كل صوت عربي على الجهاز بزرار تشغيل، والمستخدم يختار اللي يعجبه
 const VOICE_SAMPLE = 'أهلاً يا يوسف، صرفت النهارده 250 جنيه، وتقدر تصرف 400 في اليوم لحد القبض.';
@@ -1811,7 +1828,8 @@ function openVoicePicker() {
 function voiceSettingsHtml() {
   const list = arVoices();
   return `<h3 style="margin-top:16px">صوت المساعد</h3>
-    <button class="btn primary block" id="stVoices">${ic('speaker')} اسمع أمثلة الأصوات واختار (${list.length})</button>
+    <label class="row"><input type="checkbox" id="stVoiceOn" ${db.prefs.voiceOff ? '' : 'checked'}> المساعد يرد بالصوت (لو قفلته هيرد بالكتابة بس)</label>
+    <button class="btn primary block" id="stVoices" style="margin-top:8px">${ic('speaker')} اسمع أمثلة الأصوات واختار (${list.length})</button>
     <label class="f">السرعة</label><div class="chips">${[[0.8, 'بطيء'], [0.95, 'عادي'], [1.1, 'سريع']].map(([r, t]) => `<button class="chip ${(db.prefs.voiceRate || 0.95) === r ? 'on' : ''}" data-vr="${r}">${t}</button>`).join('')}</div>
     <button class="btn block" id="stVoiceTest" style="margin-top:8px">${ic('speaker')} جرّب الصوت</button>
     <p class="muted">لصوت أوضح على الآيفون: الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، ونزّل صوت «Majed» أو «Laila» بنسخة <b>Enhanced/محسّن</b>، وبعدين اختاره هنا.</p>`;
