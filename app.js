@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '40';
+const APP_VERSION = '41';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -546,7 +546,7 @@ function renderHome() {
   const hS = $('#hSpend'); if (hS) hS.onclick = () => openSpend();
   view().querySelectorAll('[data-cat]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.cat, period: 'MONTH' }; setTab('txns'); });
   if ($('#hSpeak')) $('#hSpeak').onclick = () => speak(dailyPlan().tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. '));
-  $('#hMic').onclick = quickVoice;
+  $('#hMic').onclick = openChat;
   if ($('#hRisk')) $('#hRisk').onclick = () => setTab('ctrl');
   if ($('#hProf')) $('#hProf').onclick = () => openOnboarding();
   view().querySelectorAll('[data-q]').forEach(b => b.onclick = qa[b.dataset.q]);
@@ -2666,6 +2666,69 @@ function openVoice() {
   });
 }
 
+// ================= شات المساعد =================
+// زي أي شات AI: رسايل فوق، وتحت خانة كتابة + مايك. الرد بيظهر مكتوب وبيتقري بالصوت.
+const chatGo = new Map();
+const CHAT_SUGG = ['فاضلي كام؟', 'صرفت كام النهارده؟', 'صرفت 100 أكل', 'وضعي المالي عامل إيه؟', 'أكتر حاجة بصرف عليها', 'الأقساط', 'إزاي أضيف مصروف ثابت؟', 'جولة في البرنامج'];
+let chatRec = null;
+function openChat() {
+  let el = $('#chat');
+  if (!el) { el = document.createElement('div'); el.id = 'chat'; el.className = 'chat hidden'; document.body.appendChild(el); }
+  db.chat = db.chat || [];
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  el.innerHTML = `<div class="chat-top"><button class="icon-btn" id="cBack" aria-label="رجوع">›</button><div class="grow"><b>المساعد</b><div class="muted" id="cSt">اكتب أو اتكلم</div></div>
+      <button class="icon-btn" id="cMute" aria-label="الصوت">${db.prefs.voiceOff ? '🔇' : '🔊'}</button><button class="icon-btn" id="cMore" aria-label="الإعدادات">${ic('settings')}</button></div>
+    <div class="chat-list" id="cList"></div>
+    <div class="chat-sugg" id="cSugg">${CHAT_SUGG.map(x => `<button class="chip" data-cs="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <div class="chat-bar"><textarea id="cIn" rows="1" placeholder="اكتب رسالتك..."></textarea>
+      ${SR ? `<button class="c-mic" id="cMic" aria-label="مايك">${ic('mic')}</button>` : ''}<button class="c-send" id="cSend" aria-label="إرسال">➤</button></div>`;
+  el.classList.remove('hidden'); document.body.style.overflow = 'hidden';
+  const list = $('#cList');
+  const bubble = m => `<div class="msg ${m.me ? 'me' : 'bot'}" data-mid="${m.id}"><div class="bub">${esc(m.text)}${m.undo && !m.undone ? `<div><button class="btn small" data-cu="${m.id}">تراجع</button></div>` : ''}${chatGo.has(m.id) ? `<div><button class="btn small primary" data-cg="${m.id}">افتح ${esc(m.goLabel || '')}</button></div>` : ''}</div>
+    ${m.me ? '' : `<button class="c-say" data-cy="${m.id}" aria-label="اسمع">${ic('speaker')}</button>`}</div>`;
+  const draw = () => {
+    list.innerHTML = db.chat.length ? db.chat.map(bubble).join('') : `<div class="msg bot"><div class="bub">أهلاً 👋 أنا مساعدك المالي. اكتبلي أو دوس على المايك وقول مثلاً «صرفت 150 أكل» أو «فاضلي كام».</div></div>`;
+    list.scrollTop = list.scrollHeight;
+    list.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cu); db.txns = db.txns.filter(x => x.id !== m.undo); m.undone = true; save(); render(); add(false, 'اتلغت الحركة'); });
+    list.querySelectorAll('[data-cg]').forEach(b => b.onclick = () => { const f = chatGo.get(+b.dataset.cg); closeChat(); f && f(); });
+    list.querySelectorAll('[data-cy]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cy); m && speakForce(m.text); });
+  };
+  const add = (me, text, extra = {}) => { const m = { id: newId(), me, text, date: Date.now(), ...extra }; db.chat.push(m); if (db.chat.length > 80) db.chat.splice(0, db.chat.length - 80); save(); draw(); return m; };
+  const send = (txt, byVoice) => {
+    txt = (txt || '').trim(); if (!txt) return;
+    $('#cIn').value = ''; fit(); add(true, txt);
+    if (/^(جوله|جولة)( في البرنامج)?$/.test(txt)) { closeChat(); return startTour(); }
+    let r; try { r = handleVoice(txt); } catch (e) { console.error(e); r = { reply: 'حصلت مشكلة وأنا بنفّذ، جرّب تاني' }; }
+    if (r.silent) return;
+    const m = add(false, r.reply, { undo: r.undoId || null, goLabel: r.goLabel || '' });
+    if (r.go) { chatGo.set(m.id, r.go); draw(); }
+    speak(r.reply);
+  };
+  const fit = () => { const t = $('#cIn'); t.style.height = 'auto'; t.style.height = Math.min(120, t.scrollHeight) + 'px'; };
+  $('#cIn').oninput = fit;
+  $('#cIn').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send($('#cIn').value); } };
+  $('#cSend').onclick = () => send($('#cIn').value);
+  el.querySelectorAll('[data-cs]').forEach(b => b.onclick = () => send(b.dataset.cs));
+  $('#cBack').onclick = closeChat;
+  $('#cMute').onclick = () => { db.prefs.voiceOff = !db.prefs.voiceOff; save(); $('#cMute').textContent = db.prefs.voiceOff ? '🔇' : '🔊'; if (db.prefs.voiceOff) { try { speechSynthesis.cancel(); } catch (e) { } if (azAudio) azAudio.pause(); } toast(db.prefs.voiceOff ? 'الرد هيبقى كتابة بس' : 'الرد هيبقى بالصوت كمان'); };
+  $('#cMore').onclick = () => { closeChat(); openVoice(); };
+  if (SR) $('#cMic').onclick = () => {
+    if (chatRec) { chatRec.stop(); return; }
+    try { speechSynthesis.cancel(); } catch (e) { } if (azAudio) azAudio.pause();
+    let heard = '';
+    chatRec = new SR(); chatRec.lang = 'ar-EG'; chatRec.interimResults = true;
+    const mt = micTimers(chatRec);
+    $('#cMic').classList.add('on'); $('#cSt').textContent = 'بسمعك...';
+    chatRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); $('#cIn').value = heard; fit(); mt.heard(); };
+    chatRec.onerror = e => { $('#cSt').textContent = e.error === 'not-allowed' ? 'اسمح بالمايك من إعدادات الآيفون' : 'ماسمعتش كويس'; };
+    chatRec.onend = () => { mt.clear(); chatRec = null; const b = $('#cMic'); if (!b) return; b.classList.remove('on');
+      if (heard.trim()) { $('#cSt').textContent = 'اكتب أو اتكلم'; setTimeout(() => send(heard, true), 500); } else if ($('#cSt').textContent === 'بسمعك...') $('#cSt').textContent = 'ماسمعتش حاجة، دوس على المايك تاني'; };
+    try { chatRec.start(); } catch (e) { chatRec = null; $('#cMic').classList.remove('on'); }
+  };
+  draw();
+}
+function closeChat() { const el = $('#chat'); if (!el) return; if (chatRec) try { chatRec.abort(); } catch (e) { } el.classList.add('hidden'); document.body.style.overflow = ''; }
+
 // ================= النوافذ =================
 function sheet(title, html, onReady) {
   $('#sheetTitle').textContent = title;
@@ -3222,7 +3285,7 @@ document.querySelector('.sheet-bg').onclick = closeSheet;
 $('#pinGo').onclick = tryUnlock;
 $('#faceGo').onclick = bioUnlock;
 $('#vfab').innerHTML = ic('mic');
-$('#vfab').onclick = quickVoice;
+$('#vfab').onclick = openChat;
 $('#faceGo').innerHTML = ic('faceid') + '<span>فتح بـ Face ID</span>';
 $('#pinIn').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
 $('#settingsBtn').onclick = openSettings;
