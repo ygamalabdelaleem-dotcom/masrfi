@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '31';
+const APP_VERSION = '32';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -760,6 +760,25 @@ function schedule(p) {
     }
   }
   return rows;
+}
+// ملخص البطاقات الائتمانية لفترة: مشتريات، أقساط اتقيدت، سداد، وحالة البطاقة دلوقتي
+function cardsSummary(f, t) {
+  const bal = balances();
+  return db.accounts.filter(a => a.type === 'CREDIT' && !a.archived).map(a => {
+    const tx = db.txns.filter(x => x.date >= f && x.date <= t);
+    const ex = tx.filter(x => x.type === 'EXPENSE' && x.accountId === a.id);
+    const inst = ex.filter(x => x.source === 'INSTALLMENT').reduce((s0, x) => s0 + x.amount, 0);
+    const buy = ex.filter(x => x.source !== 'INSTALLMENT').reduce((s0, x) => s0 + x.amount, 0);
+    const paid = tx.filter(x => x.type === 'TRANSFER' && x.toAccountId === a.id).reduce((s0, x) => s0 + (x.toAmount ?? x.amount), 0);
+    const plans = db.installments.filter(p => p.cardId === a.id);
+    const instOut = plans.reduce((s0, p) => s0 + planSummary(p).outstanding, 0);
+    const instMonthly = plans.filter(p => nextInstallment(p)).reduce((s0, p) => s0 + nextInstallment(p).payment, 0);
+    const lastEnd = plans.reduce((m, p) => Math.max(m, planDates(p).end || 0), 0);
+    const owed = Math.max(0, -(bal[a.id] || 0)); const lim = +a.creditLimit || 0;
+    const st = stmtLeft(a);
+    const due = st ? { amt: st.left, date: st.date } : owed > 0 && a.dueDay ? { amt: owed, date: dayStart(Date.now()) + daysUntilDay(a.dueDay) * DAY } : null;
+    return { a, buy, inst, paid, owed, instOut, instMonthly, lastEnd, lim, used: lim ? (owed + instOut) / lim * 100 : 0, avail: lim ? Math.max(0, lim - owed - instOut) : 0, due, cur: a.currency };
+  });
 }
 function planSummary(p) {
   const rows = schedule(p); const paid = Math.min(p.paid || 0, rows.length);
@@ -1540,6 +1559,11 @@ function riskAlerts(cp = cashPlan()) {
   const instM = act.reduce((s0, x) => s0 + nextInstallment(x).payment, 0);
   if (p.salary > 0 && instM > p.salary * 0.3) out.push({ lvl: 'warn', sc: 'شهري', text: `الأقساط <b class="num">${n(instM)}</b> في الشهر = ${Math.round(instM / p.salary * 100)}% من مرتبك. ماتدخلش في تقسيط جديد قبل ما حاجة تخلص.` });
   act.filter(x => planDates(x).left <= 2).forEach(x => out.push({ lvl: 'info', sc: 'شهري', text: `تقسيط «${esc(x.name)}» بيخلص ${ltr(fmtDate(planDates(x).end))}، وهيوفّرلك <b class="num">${n(nextInstallment(x).payment)}</b> كل شهر. وجّههم للادخار.` }));
+  cardsSummary(...monthRange(0)).forEach(c => {
+    if (c.lim && c.used >= 80) out.push({ lvl: c.used >= 95 ? 'danger' : 'warn', sc: 'شهري', text: `بطاقة ${esc(lbl(c.a.name))} مستخدم منها ${c.used.toFixed(0)}% من الحد. الأفضل تفضل تحت 30%.` });
+    if (c.due && c.due.amt > 0) { const di = Math.round((dayStart(c.due.date) - cp.t0) / DAY);
+      if (di >= 0 && di <= 7) out.push({ lvl: 'warn', sc: 'أسبوعي', text: `سداد بطاقة ${esc(lbl(c.a.name))} <b class="num">${n(c.due.amt)}</b> ${dayName(di)}. ماتتأخرش عشان الفوايد.` }); }
+  });
   const ai = avgMonthly('INCOME'), ae = avgMonthly('EXPENSE');
   if (ai > 0 && ae > ai) out.push({ lvl: 'danger', sc: 'شهري', text: `آخر 3 شهور بتصرف أكتر من دخلك بمتوسط <b class="num">${n(ae - ai)}</b> في الشهر.` });
   if (!out.some(x => x.lvl !== 'info')) out.unshift({ lvl: 'ok', sc: 'الحالة', text: `وضعك آمن. تقدر تصرف <b class="num">${n(cp.safeDaily)}</b> في اليوم لحد القبض (${L} يوم)${cp.liquid > 0 && isFinite(cp.runway) ? `، وفلوسك تكفي ${cp.runway} يوم من غير دخل` : ''}.` });
@@ -1629,6 +1653,16 @@ function renderCtrl() {
       ${cp.unlogged > 0 ? `<p class="muted">اتخصم <b class="num">${m(cp.unlogged)}</b> تقدير للأيام اللي ماسجّلتش فيها. سجّلها من الرئيسية عشان الحساب يبقى أدق.</p>` : ''}
       ${cp.saveLeft > 0 ? `<p class="muted">محجوز <b class="num">${m(cp.saveLeft)}</b> ادخار الشهر ده لسه ماتحوّلش لحساب التوفير، ومش داخل في المسموح اليومي.</p>` : ''}
     </div>
+    ${(() => { const cs = cardsSummary(...monthRange(0)); if (!cs.length) return '';
+      const tot = k => cs.reduce((s0, c) => s0 + conv(c[k], c.cur), 0);
+      return `<div class="card"><div class="row between"><h3>البطاقات الائتمانية</h3><span class="muted">عليك ${m(tot('owed') + tot('instOut'))}</span></div>
+      ${cs.map(c => { const di = c.due ? Math.round((dayStart(c.due.date) - cp.t0) / DAY) : -1; const after = di >= 0 && di < cp.series.length ? cp.series[di] : null;
+        return `<div class="rule"><div class="row between"><b>💳 ${esc(lbl(c.a.name))}</b>${c.due && c.due.amt > 0 ? `<span class="num exp">${m(c.due.amt)}</span>` : '<span class="muted">مفيش مطلوب</span>'}</div>
+        ${c.due && c.due.amt > 0 ? `<div class="muted">آخر ميعاد ${ltr(fmtDate(c.due.date))} (بعد ${Math.max(0, di)} يوم)${after != null ? ` · رصيدك بعد السداد متوقع <b class="num ${after < 0 ? 'exp' : ''}">${m(after)}</b>` : ''}</div>` : ''}
+        ${c.lim ? `<div class="bar ${c.used >= 90 ? 'over' : c.used >= 70 ? 'warn' : ''}" style="margin-top:6px"><i style="width:${Math.min(100, c.used)}%"></i></div>
+        <div class="row between muted" style="font-size:12.5px"><span>مستخدم ${c.used.toFixed(0)}% من الحد</span><span>المتاح ${m(c.avail)}</span></div>` : ''}
+        <div class="row between muted" style="font-size:12.5px"><span>استخدام ${m(c.owed)} · أقساط باقية ${m(c.instOut)}</span><span>${c.instMonthly ? `قسط شهري ${m(c.instMonthly)}${c.lastEnd ? ` لحد ${ltr(fmtDate(c.lastEnd).slice(0, 7))}` : ''}` : ''}</span></div></div>`; }).join('')}
+      ${p.salary > 0 && tot('instMonthly') ? insH('coins', `أقساط البطاقات <b class="num">${money(tot('instMonthly'))}</b> في الشهر = ${Math.round(tot('instMonthly') / p.salary * 100)}% من مرتبك.`) : ''}</div>`; })()}
     ${up.length ? `<div class="card"><h3>الجاي لحد القبض</h3><div class="list">${up.map(e => `<div class="item"><div class="ico">${e.amt > 0 ? '⬇️' : '📌'}</div><div class="grow"><div class="ellipsis">${esc(e.label)}</div><div class="muted">${e.n > 1 ? `${e.n} مرات من ${ltr(fmtDate(e.date))}` : ltr(fmtDate(e.date))}</div></div><div class="num ${e.amt > 0 ? 'inc' : 'exp'}">${money(Math.abs(e.amt))}</div></div>`).join('')}</div></div>` : ''}
     <div class="card"><div class="row between"><h3>توزيع المرتب</h3><span class="muted num">${money(a.S)}</span></div>
       ${[['🏠', 'مصاريف ثابتة', a.fixed, 'exp'], ['🛟', 'صندوق الطوارئ', a.emerg, 'inc'], ['📈', 'استثمار', a.invest, 'primary'], ['🛍️', 'مصروف حر', Math.max(0, a.free), 'warn']].filter(x => x[2] > 0).map(([i, t, v, c]) => `<div class="rule"><div class="row between"><span>${i} ${t}</span><span class="num">${m(v)} <small class="muted">${a.S ? Math.round(v / a.S * 100) : 0}%</small></span></div><div class="bar"><i style="width:${a.S ? v / a.S * 100 : 0}%;background:var(--${c})"></i></div></div>`).join('')}
@@ -1688,6 +1722,15 @@ function openMonthReport(off = 0) {
       <tr class="next"><td>مصروفات متغيرة</td><td class="num exp">(${money(vr)})</td><td class="num">${inc ? (vr / inc * 100).toFixed(0) + '%' : ''}</td></tr>${rows(vc)}
       <tr class="next"><td>صافي الفائض / (العجز)</td><td class="num ${net >= 0 ? 'inc' : 'exp'}">${net < 0 ? `(${money(-net)})` : money(net)}</td><td class="num">${inc ? (net / inc * 100).toFixed(0) + '%' : ''}</td></tr>
     </table></div>
+    ${(() => { const cs = cardsSummary(f, t); if (!cs.length) return '';
+      return `<h3 style="margin-top:14px">البطاقات الائتمانية · ${label}</h3>
+      <div class="table-wrap"><table class="tbl">
+        <tr><th>البطاقة</th><th>مشتريات</th><th>أقساط</th><th>سددت</th></tr>
+        ${cs.map(c => `<tr><td>💳 ${esc(lbl(c.a.name))}</td><td class="num">${money(c.buy)}</td><td class="num">${money(c.inst)}</td><td class="num inc">${money(c.paid)}</td></tr>`).join('')}
+        ${cs.length > 1 ? `<tr class="next"><td>الإجمالي</td>${['buy', 'inst', 'paid'].map(k => `<td class="num">${money(cs.reduce((s0, c) => s0 + conv(c[k], c.cur), 0))}</td>`).join('')}</tr>` : ''}
+      </table></div>
+      ${cs.map(c => `<div class="insight"><div class="grow">💳 ${esc(lbl(c.a.name))}: عليك دلوقتي استخدام <b class="num">${money(c.owed)}</b> + أقساط باقية <b class="num">${money(c.instOut)}</b>${c.due && c.due.amt > 0 ? `، والمطلوب <b class="num">${money(c.due.amt)}</b> قبل ${ltr(fmtDate(c.due.date))}` : ''}.</div></div>`).join('')}
+      <p class="muted">مشتريات وأقساط البطاقة داخلة في المصروفات فوق في الشهر اللي اتصرفت فيه، والسداد مجرد تحويل من حسابك للبطاقة.</p>`; })()}
     <h3 style="margin-top:14px">ملاحظات</h3>${notes.length ? notes.map(x => `<div class="insight">${x}</div>`).join('') : '<p class="muted">مفيش بيانات كفاية للشهر ده.</p>'}
     <div class="btns"><button class="btn" id="mrCsv">⬇️ Excel/CSV</button><button class="btn" id="mrShare">مشاركة</button></div>`, () => {
     document.querySelectorAll('[data-mo]').forEach(b => b.onclick = () => openMonthReport(+b.dataset.mo));
