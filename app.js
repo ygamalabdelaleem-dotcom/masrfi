@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '32';
+const APP_VERSION = '33';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1431,6 +1431,13 @@ function workTime(amount) {
   const d = Math.floor(hrs / hd), h = Math.round(hrs - d * hd);
   return `${d} يوم${h ? ` و ${h} ساعة` : ''} شغل`;
 }
+// المبلغ كنسبة من شهر الشغل (المرتب)
+function monthTime(amount) {
+  const sal = +prof().salary || 0; if (!sal || !(amount > 0)) return '';
+  const r = amount / sal; const days = Math.round(r * 30 * 10) / 10;
+  if (r >= 1) return `${(Math.round(r * 10) / 10)} شهر شغل`;
+  return `${Math.round(r * 100) || '<1'}% من شهر شغلك (≈ ${days} يوم)`;
+}
 // المكافئ الشهري لأي بند متكرر
 const MONTH_FACTOR = { DAILY: 30.44, WEEKLY: 4.35, MONTHLY: 1, YEARLY: 1 / 12 };
 const recCur = r => (acc(r.accountId) || {}).currency || base();
@@ -1670,9 +1677,9 @@ function renderCtrl() {
       ${a.emDone ? insH('check', 'صندوق الطوارئ مكتمل، كل الادخار يروح للاستثمار.') : a.emTarget ? insH('target', `صندوق الطوارئ: معاك <b class="num">${money(a.savingsBal)}</b> من <b class="num">${money(a.emTarget)}</b> (${p.emMonths || 6} شهور ثابت).`) : ''}
     </div>
     <div class="card"><h3>قيمة وقتك</h3>
-      ${hourRate() ? `<div class="row between"><span>ساعة شغلك تساوي</span><b class="num">${money(hourRate())} ${base()}</b></div>
+      ${p.salary > 0 ? `<div class="row between"><span>شهر شغلك يساوي</span><b class="num">${money(p.salary)} ${base()}</b></div>
       <input class="in num" id="cHr" inputmode="decimal" placeholder="اكتب سعر حاجة عاوز تشتريها" style="margin-top:10px"><div id="cHrOut" class="muted" style="margin-top:6px"></div>
-      <p class="muted">صرفت الشهر ده ${workTime(typeTotals(inRange(...monthRange(0)))[1]) || '—'}.</p>` : '<p class="muted">حدّد ساعات شغلك في «بياناتي المالية» عشان نحسبلك قيمة الساعة.</p>'}
+      <p class="muted">صرفت الشهر ده ${monthTime(typeTotals(inRange(...monthRange(0)))[1]) || '—'}.</p>` : '<p class="muted">اكتب مرتبك في «بياناتي المالية» عشان نحسبلك قيمة شهرك.</p>'}
     </div>
     <div class="card"><h3>أفكار للادخار والاستثمار</h3>
       ${INVEST_IDEAS.map(([i, t, d, r]) => `<div class="insight"><span style="font-size:20px">${i}</span><div class="grow"><b>${t}</b> <span class="pill">${r}</span><div class="muted">${d}</div></div></div>`).join('')}
@@ -1680,7 +1687,7 @@ function renderCtrl() {
     </div>
     <div class="btns" style="margin-bottom:12px"><button class="btn" id="cFixed">${ic('repeat')} المصاريف الثابتة</button><button class="btn" id="cRep">${ic('chart')} التقرير الشهري</button></div>
     <button class="btn block" id="cProf">${ic('settings')} تعديل بياناتي المالية</button>`;
-  if ($('#cHr')) $('#cHr').oninput = e => { const v = parseAmount(e.target.value); $('#cHrOut').innerHTML = v ? `= <b>${workTime(v)}</b>` : ''; };
+  if ($('#cHr')) $('#cHr').oninput = e => { const v = parseAmount(e.target.value); $('#cHrOut').innerHTML = v ? `= <b>${monthTime(v)}</b>` : ''; };
   $('#cFixed').onclick = openRecurring; $('#cRep').onclick = () => openMonthReport(0); $('#cProf').onclick = () => openOnboarding(true);
 }
 // كارت مختصر في الرئيسية
