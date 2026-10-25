@@ -1592,6 +1592,70 @@ async function checkRiskNotify() {
   try { const reg = await navigator.serviceWorker.getRegistration(); reg.showNotification('محفظتي: خطر سيولة', { body: a.text.replace(/<[^>]+>/g, ''), icon: 'icons/icon-192.png', tag: 'risk' }); } catch (e) { }
 }
 
+// ================= دليل البرنامج بالصوت =================
+// كل موضوع: كلمات بيتعرف بيها، عنوان، الشرح، والشاشة اللي يفتحها
+const HELP = [
+  { k: ['البرنامج', 'التطبيق', 'ابدا', 'بيعمل ايه', 'فكره'], t: 'فكرة البرنامج', a: 'محفظتي بيسجّل دخلك ومصاريفك، ويحسبلك تقدر تصرف كام في اليوم لحد القبض، وينبهك لو في خطر سيولة. ابدأ بتسجيل مرتبك في بياناتي المالية، وبعدين سجّل كل مصروف بزرار الزائد اللي تحت أو بالصوت.' },
+  { k: ['اضيف مصروف', 'اسجل مصروف', 'سجل مصروف', 'اضافه مصروف', 'حركه جديده'], t: 'تسجيل مصروف', a: 'اضغط زرار الزائد الأزرق اللي في نص الشريط تحت، اكتب المبلغ واختار التصنيف واضغط حفظ. أو اضغط المايك وقول مثلاً: صرفت 150 أكل. وهتلاقي اقتراحات بالمصاريف اللي بتتكرر تضغط عليها على طول.', go: () => openTxn() },
+  { k: ['دخل', 'قبضت', 'اسجل المرتب'], t: 'تسجيل دخل', a: 'اضغط زرار الزائد واختار دخل، أو قول: قبضت 20000. ولو سجّلت مرتبك في بياناتي المالية، المرتب بيتسجّل لوحده كل شهر يوم القبض.' },
+  { k: ['مصروف ثابت', 'مصاريف ثابته', 'ثابت', 'ثابته', 'متكرر', 'متكرره', 'ايجار', 'اشتراك'], t: 'المصاريف الثابتة', a: 'المصاريف الثابتة زي الإيجار والفواتير والمواصلات اليومية. تقدر تضيفها من المزيد ثم المصاريف الثابتة، أو وانت بتسجّل أي مصروف علّم على مصروف ثابت واختار يومي أو أسبوعي أو شهري. التلقائي بيتسجّل لوحده، واليدوي بيظهرلك كاقتراح لما معاده ييجي، وكلهم بيدخلوا في التوقعات.', go: () => openRecurring() },
+  { k: ['المتحكم', 'متحكم', 'سيوله', 'تنبيه', 'تنبيهات', 'خطر', 'افلاس', 'هفلس'], t: 'المتحكم المالي والتنبيهات', a: 'صفحة المتحكم المالي بتقولك حالتك: آمن أو خلي بالك أو خطر. التنبيهات متقسمة يومي وأسبوعي وشهري، زي لو صرفت النهارده أكتر من المسموح، أو رصيدك هينزل تحت حد الأمان الأسبوع ده، أو فلوسك هتخلص قبل القبض.', go: () => { closeSheet(); setTab('ctrl'); } },
+  { k: ['توقع', 'الرسم', 'الرصيد المتوقع', 'الخط'], t: 'توقع الرصيد', a: 'الرسم في المتحكم المالي بيوريك رصيدك المتوقع كل يوم لحد بعد القبض. بيحسب المصاريف الثابتة والأقساط والمرتب ومتوسط صرفك اليومي. الخط المتقطع البرتقالي هو حد الأمان، ولو الخط نزل تحته يبقى خلي بالك.', go: () => { closeSheet(); setTab('ctrl'); } },
+  { k: ['الامن', 'اصرف كام', 'المسموح', 'الحد اليومي', 'اقتراح النهارده'], t: 'المسموح في اليوم', a: 'المسموح في اليوم بيتحسب كده: رصيدك المتاح، ناقص المصاريف الثابتة لحد القبض، ناقص الادخار وحد الأمان، والباقي مقسوم على الأيام لحد القبض.' },
+  { k: ['توزيع', 'اوزع'], t: 'توزيع المرتب', a: 'يوم القبض حوّل نسبة الادخار الأول لحساب التوفير، وسيب فلوس المصاريف الثابتة، والباقي هو مصروفك الحر. لو صندوق الطوارئ لسه مش كامل، معظم الادخار بيروح له، والباقي للاستثمار.', go: () => { closeSheet(); setTab('ctrl'); } },
+  { k: ['ساعات', 'ساعه', 'قيمه وقتي', 'قيمه الساعه'], t: 'قيمة ساعة الشغل', a: 'من مرتبك وعدد ساعات شغلك بنحسب ساعتك بكام. وانت بتسجّل أي مصروف هتلاقي تحت المبلغ هو يساوي كام ساعة شغل، وتقدر تسألني: 500 جنيه تساوي كام ساعة.' },
+  { k: ['تقرير', 'قائمه الدخل', 'تقارير'], t: 'التقرير الشهري', a: 'التقرير الشهري زي قائمة الدخل: الإيرادات، ناقص المصروفات الثابتة، ناقص المتغيرة، والصافي فائض أو عجز، مع ملاحظات. تفتحه من التقارير أو من المزيد، وتقدر تصدّره Excel.', go: () => openMonthReport(0) },
+  { k: ['ادخار', 'طوارئ', 'استثمار', 'احوش'], t: 'الادخار والاستثمار', a: 'صفحة الادخار فيها قاعدة 50 30 20 وصندوق الطوارئ وخطة الأهداف. ابدأ بصندوق طوارئ يغطي من 3 لـ 6 شهور، وبعدين الاستثمار، وفي المتحكم المالي هتلاقي أفكار زي الشهادات وصناديق النقد والذهب.', go: () => { closeSheet(); setTab('savings'); } },
+  { k: ['بطاقه', 'كريدت', 'قسط', 'اقساط', 'تقسيط'], t: 'البطاقات والأقساط', a: 'من المزيد ثم بطاقات الائتمان والتقسيط، ضيف البطاقة بحدها ويوم السداد، وضيف أي تقسيط بالمبلغ والفايدة والمدة، والتطبيق يعمل جدول الأقساط وينبهك قبل الميعاد.', go: () => { closeSheet(); setTab('cards'); } },
+  { k: ['رسائل', 'رساله البنك', 'sms'], t: 'رسائل البنك', a: 'انسخ رسالة البنك والصقها في رسائل البنك، والتطبيق يطلع المبلغ والتاجر والتصنيف لوحده. وفيه طريقة ربط تلقائي بالاختصارات على الآيفون.', go: () => { closeSheet(); setTab('inbox'); } },
+  { k: ['بياناتي', 'اعدل المرتب', 'يوم القبض', 'حد الامان', 'اغير المرتب'], t: 'بياناتي المالية', a: 'تقدر تعدّل المرتب ويوم القبض وساعات الشغل ونسبة الادخار وحد الأمان من الإعدادات، أو من المزيد ثم بياناتي المالية.', go: () => openOnboarding(true) },
+  { k: ['ميزانيه', 'تصنيف', 'تصنيفات'], t: 'التصنيفات والميزانيات', a: 'من المزيد ثم التصنيفات والميزانيات، حط ميزانية شهرية لكل تصنيف، والتطبيق ينبهك لما توصل 80 في المية.', go: () => openCategories() },
+  { k: ['نسخه', 'احتياطي', 'باك اب', 'اصدر', 'excel', 'اكسل'], t: 'النسخ الاحتياطي', a: 'بياناتك على موبايلك بس. خد نسخة احتياطية مشفرة من المزيد ثم نسخ احتياطي واستعادة، واحفظها في iCloud.', go: () => openBackup() },
+  { k: ['قفل', 'باسورد', 'pin', 'فيس'], t: 'القفل', a: 'من المزيد ثم قفل PIN، حط رقم سري، وتقدر تفعّل الفتح بالوش.', go: () => openPin() },
+  { k: ['صوت', 'المساعد', 'اقول ايه', 'اوامر'], t: 'المساعد الصوتي', a: 'اضغط المايك وقول مثلاً: صرفت 200 أكل، قبضت 5000، حالتي المالية، فاضلي كام، مصاريفي الثابتة، 500 جنيه تساوي كام ساعة، أو اسألني إزاي أعمل أي حاجة في البرنامج. وتقدر تغيّر الصوت من الإعدادات.' }
+];
+// شرح الشاشة المفتوحة دلوقتي
+const SCREEN_HELP = {
+  home: 'دي الرئيسية: فوق رصيدك وحساباتك، وتحتها اختصارات، وبعدين حالة السيولة، وملخص الشهر، واقتراح النهارده بالمبلغ اللي تقدر تصرفه، وآخر الحركات.',
+  txns: 'دي الحركات: كل اللي سجّلته، وتقدر تدوّر وتفلتر بالفترة أو الحساب أو التصنيف، واضغط على أي حركة تعدّلها.',
+  reports: 'دي التقارير: صرفك حسب التصنيف، وآخر 12 شهر، وأكبر المصروفات، وزرار التقرير الشهري بشكل قائمة دخل.',
+  more: 'دي المزيد: فيها الحسابات، والمصاريف الثابتة، والديون، والأهداف، والإعدادات، والنسخ الاحتياطي.',
+  ctrl: HELP[4].a + ' وتحت فيه توقع الرصيد، والمدفوعات الجاية، وتوزيع المرتب، وقيمة ساعة شغلك.',
+  savings: HELP[10].a, cards: HELP[11].a, inbox: HELP[12].a
+};
+const normAr = x => normDigits(String(x)).toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+function findHelp(t) {
+  let best = null, sc = 0;
+  HELP.forEach(h => { const n = h.k.filter(k => t.includes(normAr(k))).reduce((s, k) => s + k.length, 0); if (n > sc) { sc = n; best = h; } });
+  return best;
+}
+const HELP_Q = /(ازاي|كيف|ايه هو|ايه هي|يعني ايه|اشرح|فين|ساعدني|مش فاهم|عرفني|علمني|طريقه|استخدم)/;
+function helpReply(t) {
+  if (/(جوله|فرجني|وريني البرنامج|عرفني علي البرنامج)/.test(t)) { setTimeout(startTour, 300); return { reply: 'تمام، هاخدك جولة سريعة في البرنامج' , silent: true }; }
+  if (/(الصفحه دي|الشاشه دي|انا فين|دي ايه)/.test(t)) return { reply: SCREEN_HELP[tab] || SCREEN_HELP.home };
+  if (!HELP_Q.test(t)) return null;
+  const h = findHelp(t);
+  if (!h) return { reply: 'ممكن تسألني مثلاً: إزاي أضيف مصروف ثابت، يعني إيه المتحكم المالي، إزاي أعمل نسخة احتياطية، أو قول جولة وأنا أعرّفك على البرنامج.' };
+  return { reply: h.a, go: h.go, goLabel: h.t };
+}
+// جولة صوتية: بتنقل بين الشاشات وتشرح كل واحدة
+let tourStep = -1;
+const TOUR = [['home', SCREEN_HELP.home], ['ctrl', SCREEN_HELP.ctrl], ['txns', SCREEN_HELP.txns], ['reports', SCREEN_HELP.reports], ['more', SCREEN_HELP.more],
+  ['home', 'وأخيراً، زرار المايك الصغير موجود في كل الشاشات. اسألني أي حاجة زي: إزاي أضيف مصروف ثابت. بالتوفيق!']];
+function startTour() { closeSheetQuiet(); tourStep = 0; tourShow(); }
+function closeSheetQuiet() { $('#sheet').classList.add('hidden'); document.body.style.overflow = ''; }
+function tourShow() {
+  if (tourStep < 0 || tourStep >= TOUR.length) { tourStep = -1; $('#vbubble').classList.add('hidden'); return; }
+  const [tb, txt] = TOUR[tourStep]; setTab(tb);
+  const b = $('#vbubble'); b.classList.remove('hidden');
+  b.innerHTML = `<div class="row between"><b>جولة ${tourStep + 1}/${TOUR.length}</b><button class="x" id="vbX">✕</button></div><div class="vb-text">${esc(txt)}</div><button class="btn small primary" id="tourNext">${tourStep < TOUR.length - 1 ? 'التالي' : 'إنهاء'}</button>`;
+  const step = tourStep;
+  const next = () => { if (tourStep !== step) return; tourStep++; tourShow(); };
+  $('#tourNext').onclick = () => { speechSynthesis && speechSynthesis.cancel(); next(); };
+  $('#vbX').onclick = () => { tourStep = -1; speechSynthesis && speechSynthesis.cancel(); b.classList.add('hidden'); };
+  speak(txt, () => setTimeout(next, 700));
+}
+
 // ================= المساعد الصوتي =================
 // أحسن صوت عربي متاح على الجهاز: المحسّن/المميز أولاً، والمصري قبل غيره. المستخدم يقدر يختار من الإعدادات.
 let voicesCache = [];
@@ -1608,7 +1672,7 @@ function speechText(text) {
     .replace(/(\d),(?=\d{3})/g, '$1').replace(/(\d+)\.00\b/g, '$1').replace(/(\d+)\.(\d)\d?\b/g, (m, a, b) => +b ? m : a)
     .replace(/\bEGP\b/g, 'جنيه').replace(/%/g, ' في المية').replace(/[\u{1F300}-\u{1FAFF}☀-➿️📌•«»]/gu, '').replace(/\s+/g, ' ').trim();
 }
-function speak(text) {
+function speak(text, onEnd) {
   if (!('speechSynthesis' in window)) return toast('القراءة بالصوت مش مدعومة هنا');
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(speechText(text));
@@ -1616,6 +1680,7 @@ function speak(text) {
   const v = list.find(x => x.voiceURI === db.prefs.voiceURI) || list[0];
   if (v) u.voice = v;
   u.lang = v ? v.lang : 'ar-EG'; u.rate = db.prefs.voiceRate || 0.95; u.pitch = 1;
+  if (onEnd) u.onend = onEnd;
   speechSynthesis.speak(u);
 }
 function voiceSettingsHtml() {
@@ -1667,6 +1732,7 @@ function parseVoice(raw) {
 // ينفّذ الأمر الصوتي ويرجّع الرد اللي هيتقال. الإضافة بتتسجّل مباشرة مع إمكانية التراجع.
 function handleVoice(text) {
   const t = normDigits(text).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+  const hr = helpReply(t); if (hr) return hr;
   const p = dailyPlan();
   if (/(فاضل|باقي|متبقي|اقدر اصرف|ممكن اصرف|مسموح)/.test(t)) {
     if (!p.incBase) return { reply: 'سجّل دخلك الأول عشان أعرف أحسبلك' };
@@ -1727,7 +1793,7 @@ function handleVoice(text) {
       if (!ns.length) return { reply: 'مفيش أقساط جاية' };
       return { reply: `أقرب قسط ${ns[0][0].name} بـ ${n(ns[0][1].payment)} يوم ${fmtDate(ns[0][1].date)}` };
     }
-    if (/(مساعده|تقدر تعمل ايه|بتعمل ايه|اوامر)/.test(t)) return { reply: 'قول مثلاً: صرفت 200 أكل، قبضت 5000، فاضلي كام، حالتي المالية، 500 جنيه تساوي كام ساعة، مصاريفي الثابتة، أكبر مصروف، قارن بالشهر اللي فات، توقع آخر الشهر، الميزانية، وفرت كام، أو اقتراح' };
+    if (/(مساعده|تقدر تعمل ايه|بتعمل ايه|اوامر)/.test(t)) return { reply: 'قول مثلاً: إزاي أضيف مصروف ثابت، جولة، صرفت 200 أكل، قبضت 5000، فاضلي كام، حالتي المالية، 500 جنيه تساوي كام ساعة، مصاريفي الثابتة، أكبر مصروف، قارن بالشهر اللي فات، توقع آخر الشهر، الميزانية، وفرت كام، أو اقتراح' };
   }
   if (/(رصيدي|رصيد|معايا كام)/.test(t) && !/\d/.test(t)) {
     const b = balances(); const tot = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(b[a.id] || 0, a.currency), 0);
@@ -1748,9 +1814,10 @@ function handleVoice(text) {
 
 // المساعد الصغير العائم: زر مايك صغير، يسمع ويرد في فقاعة صغيرة
 let vRec = null;
-function voiceBubble(state, text, undoId) {
+function voiceBubble(state, text, undoId, go) {
   const b = $('#vbubble'); b.classList.remove('hidden');
-  b.innerHTML = `<div class="row between"><b>${state}</b><button class="x" id="vbX">✕</button></div>${text ? `<div class="vb-text">${esc(text)}</div>` : ''}${undoId ? '<button class="btn small" id="vbUndo">تراجع</button> <button class="btn small" id="vbEdit">تعديل</button>' : ''}`;
+  b.innerHTML = `<div class="row between"><b>${state}</b><button class="x" id="vbX">✕</button></div>${text ? `<div class="vb-text">${esc(text)}</div>` : ''}${undoId ? '<button class="btn small" id="vbUndo">تراجع</button> <button class="btn small" id="vbEdit">تعديل</button>' : ''}${go ? `<button class="btn small primary" id="vbGo">افتح ${esc(go.goLabel)}</button>` : ''}`;
+  if (go) $('#vbGo').onclick = () => { b.classList.add('hidden'); go.go(); };
   $('#vbX').onclick = () => { b.classList.add('hidden'); if (vRec) vRec.abort(); speechSynthesis && speechSynthesis.cancel(); };
   if (undoId) {
     $('#vbUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== undoId); save(); render(); voiceBubble('اتلغت', ''); setTimeout(() => b.classList.add('hidden'), 1200); };
@@ -1770,7 +1837,8 @@ function quickVoice() {
     vRec = null; $('#vfab').classList.remove('on');
     if (!heard.trim()) return;
     const r = handleVoice(heard);
-    voiceBubble('«' + heard + '»', r.reply, r.undoId); speak(r.reply);
+    if (r.silent) return;
+    voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); speak(r.reply);
   };
   try { vRec.start(); } catch (e) { vRec = null; $('#vfab').classList.remove('on'); openVoice(); }
 }
@@ -1782,12 +1850,20 @@ function openVoice() {
     ${SR ? `<button class="mic-big" id="vMic">${ic('mic')}</button><div class="muted" id="vState" style="text-align:center">اضغط واتكلم</div>` : ''}
     <textarea class="in" id="vText" placeholder="${SR ? 'الكلام هيظهر هنا ويمكنك تعديله' : 'اضغط على المايك في كيبورد الآيفون واتكلم، أو اكتب'}" style="min-height:80px;margin-top:10px"></textarea>
     <div class="btns"><button class="btn primary" id="vGo">تنفيذ</button><button class="btn" id="vTips">${ic('speaker')} اسمع اقتراح النهارده</button></div>
-    <div id="vOut" style="margin-top:10px"></div>`, () => {
+    <div id="vOut" style="margin-top:10px"></div>
+    <h3 style="margin-top:16px">ساعدني أفهم البرنامج</h3>
+    <button class="btn primary block" id="vTour">${ic('sparkle')} جولة صوتية في البرنامج</button>
+    <div class="chips" style="margin-top:10px;flex-wrap:wrap">${HELP.map((h, i) => `<button class="chip" data-hp="${i}">${h.t}</button>`).join('')}</div>
+    <p class="muted">أو اسأل بصوتك: «إزاي أضيف مصروف ثابت؟» «يعني إيه حد الأمان؟» «اشرح الصفحة دي».</p>`, () => {
+    $('#vTour').onclick = startTour;
+    document.querySelectorAll('[data-hp]').forEach(b => b.onclick = () => { const h = HELP[+b.dataset.hp]; $('#vOut').innerHTML = insH('bulb', `<b>${h.t}</b><br>${esc(h.a)}`) + (h.go ? '<button class="btn small primary" id="vOpen">افتحها</button>' : ''); if (h.go) $('#vOpen').onclick = h.go; speak(h.a); $('#vOut').scrollIntoView({ behavior: 'smooth' }); });
     const out = $('#vOut');
     const run = () => {
       const text = $('#vText').value.trim(); if (!text) return toast('قول أو اكتب حاجة الأول');
       const r = handleVoice(text);
-      out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '');
+      if (r.silent) return;
+      out.innerHTML = insH(r.undoId ? 'sparkle' : 'speaker', esc(r.reply)) + (r.undoId ? '<button class="btn small" id="vUndo">تراجع</button>' : '') + (r.go ? `<button class="btn small primary" id="vOpen">افتح ${esc(r.goLabel)}</button>` : '');
+      if (r.go) $('#vOpen').onclick = r.go;
       speak(r.reply);
       if (r.undoId) $('#vUndo').onclick = () => { db.txns = db.txns.filter(x => x.id !== r.undoId); save(); out.innerHTML = insH('alert', 'اتلغت'); };
       $('#vText').value = '';
