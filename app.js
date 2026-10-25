@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '23';
+const APP_VERSION = '24';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -768,7 +768,9 @@ function planSummary(p) {
   const sum = (a, k) => a.reduce((s, r) => s + r[k], 0);
   const rest = rows.slice(paid);
   return { rows, paid, monthly: rows[0] ? rows[rows.length > 1 ? 1 : 0].payment : 0, totalInterest: sum(rows, 'interest'), total: sum(rows, 'payment'),
-    remaining: sum(rest, 'payment'), remainingPrincipal: sum(rest, 'principal'), remainingInterest: sum(rest, 'interest'), next: rest[0] || null };
+    remaining: sum(rest, 'payment'), remainingPrincipal: sum(rest, 'principal'), remainingInterest: sum(rest, 'interest'), next: rest[0] || null,
+    // المتبقي زي شاشة البنك: أصل المبلغ بعد كل الأقساط ما عدا آخر قسط اتقيّد (لسه في كشف البطاقة)
+    outstanding: paid >= 2 ? rows[paid - 2].balance : paid === rows.length ? 0 : (+p.principal || 0) };
 }
 const nextInstallment = p => planSummary(p).next;
 // بداية ونهاية التقسيط والشهور الباقية
@@ -802,7 +804,7 @@ function renderCards() {
       const owed = Math.max(0, -(bal[a.id] || 0)); const lim = +a.creditLimit || 0;
       const plans = db.installments.filter(x => x.cardId === a.id);
       // البنك بيحجز باقي مبلغ التقسيط من الحد المتاح
-      const blocked = plans.reduce((s, x) => s + planSummary(x).remainingPrincipal, 0);
+      const blocked = plans.reduce((s, x) => s + planSummary(x).outstanding, 0);
       const p = lim ? (owed + blocked) / lim * 100 : 0;
       return `<div class="card ccard">
         <div class="row between"><b>${esc(lbl(a.name))}</b><span class="muted">${a.last4 ? '•••• ' + esc(a.last4) : ''}</span></div>
@@ -820,12 +822,12 @@ function renderCards() {
     ${db.installments.length ? db.installments.map(p => {
       const s = planSummary(p); const a = acc(p.cardId);
       return `<div class="card plan" data-p="${p.id}">
-        <div class="row between"><b>${esc(p.name)}</b><span class="pill">${s.paid}/${s.rows.length}</span></div>
-        <div class="muted">${a ? esc(lbl(a.name)) + ' · ' : ''}${+p.monthlyFixed ? 'قسط ثابت' : `${p.method === 'REDUCING' ? 'فائدة متناقصة' : 'فائدة ثابتة'} ${p.rate}% سنوياً`}${p.autoPay !== false ? ' · تلقائي' : ''}</div>
+        <div class="row between"><b>${esc(p.name)}</b><span class="pill">باقي ${s.rows.length - s.paid} من ${s.rows.length}</span></div>
+        <div class="muted">${a ? esc(lbl(a.name)) + ' · ' : ''}${p.method === 'REDUCING' && +p.rate ? `فائدة متناقصة ${Math.round(p.rate / 12 * 100) / 100}% شهرياً` : +p.monthlyFixed ? 'قسط ثابت' : `فائدة ثابتة ${p.rate}% سنوياً`}${p.autoPay !== false ? ' · تلقائي' : ''}</div>
         <div class="muted">📅 ${planDates(p).txt}</div>
         <div class="grid3" style="margin-top:10px">
           <div><span class="muted">القسط الشهري</span><b class="num">${money(s.monthly)}</b></div>
-          <div><span class="muted">المتبقي</span><b class="num">${money(s.remaining)}</b></div>
+          <div><span class="muted">المتبقي (زي البنك)</span><b class="num">${money(s.outstanding)}</b></div>
           <div><span class="muted">القسط القادم</span><b>${s.next ? ltr(fmtDate(s.next.date)) : '✅ انتهى'}</b></div>
         </div>
         <div class="bar"><i style="width:${s.paid / s.rows.length * 100}%"></i></div>
@@ -844,7 +846,52 @@ function renderCards() {
   $('#plNew').onclick = () => editPlan();
 }
 
-function editPlan(p, cardId) {
+// إدخال التقسيط بنفس خانات شاشة البنك (Transaction details)
+function editPlanBank(p, cardId) {
+  const isNew = !p;
+  p = p || { name: '', cardId: cardId || (db.accounts.find(a => a.type === 'CREDIT') || {}).id || null, principal: '', rate: '', months: 12, method: 'REDUCING', fees: 0, startDate: Date.now(), paid: 0, monthlyFixed: '', autoPay: true };
+  const addM = (ms, k) => { const d = new Date(ms); const day = d.getDate(); const t = new Date(d.getFullYear(), d.getMonth() + k, 1, 9); t.setDate(Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate())); return t.getTime(); };
+  const maturity = isNew ? '' : fmtDate(addM(p.startDate, p.months));
+  sheet(isNew ? 'تقسيط جديد (زي شاشة البنك)' : 'تعديل التقسيط', `
+    <p class="muted">انقل الأرقام من شاشة التقسيط في تطبيق البنك (Transaction details).</p>
+    <label class="f">الاسم (Merchant name)</label><input class="in" id="bN" value="${esc(p.name)}" placeholder="Balance Conversion">
+    <label class="f">البطاقة</label><select class="in" id="bC">${accOptions(p.cardId, a => a.type === 'CREDIT')}</select>
+    <div class="grid2">
+      <div><label class="f">Original amount</label><input class="in num" id="bP" inputmode="decimal" value="${p.principal}"></div>
+      <div><label class="f">Monthly payment</label><input class="in num" id="bMF" inputmode="decimal" value="${p.monthlyFixed || ''}"></div>
+      <div><label class="f">Monthly Interest rate %</label><input class="in num" id="bR" inputmode="decimal" value="${p.rate ? Math.round(p.rate / 12 * 1000) / 1000 : ''}"></div>
+      <div><label class="f">Maturity date</label><input class="in" type="date" id="bEnd" value="${maturity}"></div>
+      <div><label class="f">Remaining installments</label><input class="in num" id="bRem" inputmode="numeric" value="${isNew ? '' : p.months - (p.paid || 0)}"></div>
+      <div><label class="f">out of (عدد الشهور)</label><input class="in num" id="bM" inputmode="numeric" value="${p.months}"></div>
+    </div>
+    <label class="row" style="margin-top:12px"><input type="checkbox" id="bAuto" ${p.autoPay !== false ? 'checked' : ''}> سجّل القسط تلقائياً كل شهر على البطاقة</label>
+    <div class="insight" id="bPrev" style="margin-top:12px"></div>
+    <div class="btns"><button class="btn primary" id="bSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="bDel">حذف</button>'}</div>
+    <button class="btn block" id="bManual" style="margin-top:8px;background:none;color:var(--muted)">حساب يدوي بدل كده</button>`, body => {
+    const read = () => {
+      const months = parseInt(normDigits($('#bM').value)) || 12, rem = parseInt(normDigits($('#bRem').value));
+      const end = new Date($('#bEnd').value + 'T09:00').getTime();
+      return { ...p, name: $('#bN').value.trim() || 'تقسيط', cardId: +$('#bC').value || null, principal: parseAmount($('#bP').value) || 0, monthlyFixed: parseAmount($('#bMF').value) || 0,
+        rate: (parseAmount($('#bR').value) || 0) * 12, method: 'REDUCING', months, fees: 0, startDate: isFinite(end) ? addM(end, -months) : p.startDate,
+        paid: isFinite(rem) ? Math.max(0, Math.min(months, months - rem)) : p.paid || 0, autoPay: $('#bAuto').checked, bankMode: true, _endOk: isFinite(end), _remOk: isFinite(rem) };
+    };
+    const prev = () => { const x = read(); if (!x.principal || !x.monthlyFixed) { $('#bPrev').innerHTML = 'اكتب Original amount و Monthly payment'; return; }
+      const s = planSummary(x); const d = planDates(x);
+      $('#bPrev').innerHTML = `المتبقي (Outstanding) هيطلع: <b class="num">${money(s.outstanding)}</b><br>باقي ${s.rows.length - s.paid} من ${s.rows.length} · آخر قسط يتقيّد ${ltr(fmtDate(d.end))}<br>إجمالي الفوايد: <b class="num">${money(s.totalInterest)}</b>`; };
+    body.querySelectorAll('input,select').forEach(i => i.addEventListener('input', prev)); prev();
+    $('#bSave').onclick = () => {
+      const x = read(); if (!(x.principal > 0) || !(x.monthlyFixed > 0)) return toast('اكتب المبلغ والقسط الشهري');
+      if (!x._endOk || !x._remOk) return toast('اكتب Maturity date و Remaining installments');
+      delete x._endOk; delete x._remOk; x.id = x.id || newId();
+      const i = db.installments.findIndex(y => y.id === x.id); if (i >= 0) db.installments[i] = x; else db.installments.push(x);
+      save(); runInstallments(); closeSheet(); setTab('cards'); toast('تم حفظ التقسيط');
+    };
+    $('#bManual').onclick = () => editPlan(isNew ? null : p, cardId, true);
+    if (!isNew) $('#bDel').onclick = () => { if (confirm('حذف خطة التقسيط؟')) { db.installments = db.installments.filter(y => y.id !== p.id); save(); closeSheet(); } };
+  });
+}
+function editPlan(p, cardId, manual) {
+  if (!manual && (p ? p.bankMode : db.accounts.some(a => a.type === 'CREDIT'))) return editPlanBank(p, cardId);
   const isNew = !p;
   p = p || { name: '', cardId: cardId || (db.accounts.find(a => a.type === 'CREDIT') || {}).id || null, principal: '', rate: '', months: 12, method: 'FLAT', fees: 0, startDate: Date.now(), paid: 0, monthlyFixed: '', autoPay: true };
   sheet(isNew ? 'خطة تقسيط جديدة' : 'تعديل خطة التقسيط', `
@@ -864,6 +911,7 @@ function editPlan(p, cardId) {
     <label class="row" style="margin-top:12px"><input type="checkbox" id="pAuto" ${p.autoPay !== false ? 'checked' : ''}> سجّل القسط تلقائياً كل شهر على البطاقة</label>
     ${isNew ? '<p class="muted">لو التقسيط بادئ من قبل كده، الأقساط اللي فاتت هتتعلّم مدفوعة من غير ما تتسجّل تاني.</p>' : `<label class="f">عدد الأقساط المدفوعة</label><input class="in num" id="pPaid" inputmode="numeric" value="${p.paid || 0}">`}
     <div class="insight" id="pPrev" style="margin-top:12px"></div>
+    <button class="btn block" id="pBank" style="margin-top:8px">📱 أدخله زي شاشة تطبيق البنك</button>
     <div class="btns"><button class="btn primary" id="pSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="pDel">حذف</button>'}</div>`, body => {
     let method = p.method || 'FLAT';
     const read = () => ({ ...p, name: $('#pN').value.trim(), cardId: +$('#pC').value || null, principal: parseAmount($('#pP').value) || 0, months: parseInt(normDigits($('#pM').value)) || 1,
@@ -875,6 +923,7 @@ function editPlan(p, cardId) {
     body.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { method = b.dataset.m; body.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('on', x === b)); prev(); });
     body.querySelectorAll('input,select').forEach(i => i.addEventListener('input', prev));
     prev();
+    $('#pBank').onclick = () => editPlanBank(isNew ? null : Object.assign(p, { bankMode: true }), cardId);
     $('#pSave').onclick = () => {
       const x = read(); if (!x.name || !(x.principal > 0)) return toast('أدخل الاسم وأصل المبلغ');
       x.id = x.id || newId();
@@ -893,7 +942,7 @@ function openPlan(p) {
     <div class="grid2">
       <div class="stat"><span class="muted">أصل المبلغ</span><b class="num">${money(p.principal)}</b></div>
       <div class="stat"><span class="muted">إجمالي الفوائد</span><b class="num exp">${money(s.totalInterest)}</b></div>
-      <div class="stat"><span class="muted">المتبقي من الأصل</span><b class="num">${money(s.remainingPrincipal)}</b></div>
+      <div class="stat"><span class="muted">المتبقي (زي البنك)</span><b class="num">${money(s.outstanding)}</b></div>
       <div class="stat"><span class="muted">المتبقي من الفوائد</span><b class="num">${money(s.remainingInterest)}</b></div>
     </div>
     <div class="table-wrap"><table class="tbl"><thead><tr><th>#</th><th>التاريخ</th><th>القسط</th><th>أصل</th><th>فائدة</th><th>المتبقي</th></tr></thead><tbody>
@@ -1678,13 +1727,15 @@ function positions() {
   const assets = live.filter(a => (bal[a.id] || 0) > 0).reduce((s, a) => s + conv(bal[a.id], a.currency), 0);
   const cardOwed = -live.filter(a => (bal[a.id] || 0) < 0).reduce((s, a) => s + conv(bal[a.id], a.currency), 0);
   const [, mEnd] = monthRange(0);
-  let instMonth = 0, instAll = 0;
+  let instMonth = 0, instAll = 0, instOut = 0;
   db.installments.forEach(p => { const cur = (acc(p.cardId) || {}).currency || base();
-    planSummary(p).rows.slice(Math.min(p.paid || 0, 999)).forEach(r => { const v = conv(r.payment, cur); instAll += v; if (r.date <= mEnd) instMonth += v; }); });
+    const ps = planSummary(p); instOut += conv(ps.outstanding, cur);
+    ps.rows.slice(Math.min(p.paid || 0, 999)).forEach(r => { const v = conv(r.payment, cur); instAll += v; if (r.date <= mEnd) instMonth += v; }); });
   const rem = d => conv(Math.max(0, d.amount - d.paid), d.currency);
   const recv = db.debts.filter(d => d.lent).reduce((s, d) => s + rem(d), 0);
   const pay = db.debts.filter(d => !d.lent).reduce((s, d) => s + rem(d), 0);
-  return { total, assets, cardOwed, instMonth, instAll, recv, pay, afterInst: total - instMonth, net: total + recv - pay - instAll };
+  // الصافي بأصل التقسيط المتبقي (زي البنك) مش بالفوايد اللي لسه ماستحقتش
+  return { total, assets, cardOwed, instMonth, instAll, instOut, recv, pay, afterInst: total - instMonth, net: total + recv - pay - instOut };
 }
 function openPositions() {
   const p = positions(); const r = (t, v, cls, sub) => `<tr${sub ? '' : ' class="next"'}><td>${t}</td><td class="num ${cls || ''}">${v < 0 ? `(${money(-v)})` : money(v)}</td></tr>`;
@@ -1699,12 +1750,13 @@ function openPositions() {
       ${r('= الرصيد الحالي', p.total)}
       ${r('أقساط باقية الشهر ده', -p.instMonth, 'exp', 1)}
       ${r('= الرصيد بعد أقساط الشهر', p.afterInst)}
-      ${r('أقساط الشهور الجاية', -(p.instAll - p.instMonth), 'exp', 1)}
+      ${r('الرصيد الحالي', p.total, '', 1)}
+      ${r('باقي أصل التقسيط (زي البنك)', -p.instOut, 'exp', 1)}
       ${r('ديون ليك (دائن)', p.recv, 'inc', 1)}
       ${r('ديون عليك (مدين)', -p.pay, 'exp', 1)}
       ${r('= صافي الرصيد', p.net)}
     </table></div>
-    <p class="muted">صافي الرصيد = كل فلوسك، زائد الديون اللي ليك، ناقص الديون اللي عليك وكل الأقساط الباقية. ده مركزك الحقيقي لو سددت كل حاجة النهارده.</p>
+    <p class="muted">صافي الرصيد = الرصيد الحالي، زائد الديون اللي ليك، ناقص الديون اللي عليك وباقي أصل التقسيط زي ما البنك كاتبه (من غير فوايد الشهور الجاية). ده مركزك الحقيقي لو سددت كل حاجة النهارده.</p>
     <div class="btns"><button class="btn" id="posDebts">${ic('users')} الديون</button><button class="btn" id="posCards">${ic('card')} الأقساط</button></div>`, () => {
     $('#posDebts').onclick = openDebts; $('#posCards').onclick = () => { closeSheet(); setTab('cards'); };
   });
