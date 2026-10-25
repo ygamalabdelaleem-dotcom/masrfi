@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '39';
+const APP_VERSION = '40';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2594,6 +2594,13 @@ function voiceBubble(state, text, undoId, go) {
     $('#vbEdit').onclick = () => { b.classList.add('hidden'); openTxn(db.txns.find(x => x.id === undoId)); };
   }
 }
+// الآيفون مش بيقفل المايك لوحده لما تسكت: بنقفله بعد 6 ثواني لو ماسمعناش حاجة، وبعد ثانيتين سكوت بعد الكلام، وأقصى حاجة 20 ثانية
+function micTimers(r) {
+  let t = null; const cap = setTimeout(() => { try { r.stop(); } catch (e) { } }, 20000);
+  const arm = ms => { clearTimeout(t); t = setTimeout(() => { try { r.stop(); } catch (e) { } }, ms); };
+  arm(6000);
+  return { heard: () => arm(2000), clear: () => { clearTimeout(t); clearTimeout(cap); } };
+}
 function quickVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return openVoice();
@@ -2601,11 +2608,12 @@ function quickVoice() {
   let heard = '';
   vRec = new SR(); vRec.lang = 'ar-EG'; vRec.interimResults = true;
   $('#vfab').classList.add('on'); voiceBubble('بسمعك...', 'قول: صرفت 150 أكل، أو فاضلي كام؟');
-  vRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); voiceBubble('بسمعك...', heard); };
+  const mt = micTimers(vRec);
+  vRec.onresult = e => { heard = [...e.results].map(x => x[0].transcript).join(' '); voiceBubble('بسمعك...', heard); mt.heard(); };
   vRec.onerror = e => { voiceBubble(e.error === 'not-allowed' ? 'المايك مش مسموح' : 'ماسمعتش كويس', e.error === 'not-allowed' ? 'اسمح بالمايك من إعدادات الآيفون، أو اكتب الأمر' : 'اضغط على المايك وجرّب تاني'); };
   vRec.onend = () => {
-    vRec = null; $('#vfab').classList.remove('on');
-    if (!heard.trim()) return;
+    mt.clear(); vRec = null; $('#vfab').classList.remove('on');
+    if (!heard.trim()) { voiceBubble('ماسمعتش حاجة', 'اضغط على المايك واتكلم تاني'); return; }
     const r = handleVoice(heard);
     if (r.silent) return;
     voiceBubble('«' + heard + '»', r.reply, r.undoId, r.go && r); setTimeout(() => speak(r.reply), 700);
@@ -2648,9 +2656,10 @@ function openVoice() {
         if (rec) { rec.stop(); return; }
         rec = new SR(); rec.lang = 'ar-EG'; rec.interimResults = true; rec.continuous = false;
         $('#vMic').classList.add('on'); $('#vState').textContent = 'بسمعك...';
-        rec.onresult = e => { $('#vText').value = [...e.results].map(r => r[0].transcript).join(' '); };
+        const mt = micTimers(rec);
+        rec.onresult = e => { $('#vText').value = [...e.results].map(r => r[0].transcript).join(' '); mt.heard(); };
         rec.onerror = e => { $('#vState').textContent = e.error === 'not-allowed' ? 'اسمح للتطبيق باستخدام المايك من الإعدادات' : 'ماسمعتش كويس، جرّب تاني'; };
-        rec.onend = () => { rec = null; $('#vMic').classList.remove('on'); if ($('#vText').value.trim()) { $('#vState').textContent = 'تمام'; run(); } else if ($('#vState').textContent === 'بسمعك...') $('#vState').textContent = 'اضغط واتكلم'; };
+        rec.onend = () => { mt.clear(); rec = null; $('#vMic').classList.remove('on'); if ($('#vText').value.trim()) { $('#vState').textContent = 'تمام'; run(); } else if ($('#vState').textContent === 'بسمعك...') $('#vState').textContent = 'اضغط واتكلم'; };
         try { rec.start(); } catch (e) { rec = null; $('#vMic').classList.remove('on'); }
       };
     }
