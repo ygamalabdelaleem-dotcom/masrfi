@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '43';
+const APP_VERSION = '44';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2227,8 +2227,9 @@ function tourShow() {
 let voicesCache = [];
 function arVoices() {
   if ('speechSynthesis' in window) { const v = speechSynthesis.getVoices(); if (v.length) voicesCache = v; }
-  const score = x => (/premium|enhanced|محسّن|مميز|neural|natural/i.test(x.name) ? 100 : 0) + (/ar[-_]EG/i.test(x.lang) ? 20 : /ar[-_]SA/i.test(x.lang) ? 10 : 0)
-    + (/majed|maged|laila|tarik|hoda|salma|shakir|google/i.test(x.name) ? 8 : 0) + (x.localService ? 2 : 0) - (/eloquence|compact|grandpa|grandma|rocko|shelley|flo|reed|sandy/i.test(x.name) ? 50 : 0);
+  const id = x => x.name + ' ' + (x.voiceURI || '');
+  const score = x => (/premium|enhanced|محسّن|مميز|neural|natural/i.test(id(x)) ? 100 : 0) + (/ar[-_]EG/i.test(x.lang) ? 20 : /ar[-_]SA/i.test(x.lang) ? 10 : 0)
+    + (/majed|maged|laila|tarik|hoda|salma|shakir|google/i.test(x.name) ? 8 : 0) + (x.localService ? 2 : 0) - (/eloquence|grandpa|grandma|rocko|shelley|flo|reed|sandy/i.test(x.name) ? 50 : 0) - (/compact/i.test(id(x)) ? 30 : 0);
   return voicesCache.filter(x => /^ar/i.test(x.lang)).sort((a, b) => score(b) - score(a));
 }
 if ('speechSynthesis' in window) { arVoices(); speechSynthesis.onvoiceschanged = arVoices; }
@@ -2352,7 +2353,9 @@ function speak(text, onEnd, plain) {
     const list = arVoices();
     // الآيفون لو مفيش صوت محدد بيقرا بالإنجليزي، فبنستنى قائمة الأصوات مرة
     if (!list.length && !speak.waited) { speak.waited = true; setTimeout(() => speak(text, onEnd, plain), 700); return; }
-    const want = plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI));
+    let want = plain ? null : list.find(x => x.voiceURI === (only || db.prefs.voiceURI));
+    // لو المختار نسخة مضغوطة ونزلت النسخة المحسّنة من نفس الصوت، نستخدم المحسّنة
+    if (want && !only && /compact/i.test(want.voiceURI)) want = list.find(x => x.name === want.name && !/compact/i.test(x.voiceURI)) || want;
     let v = want || list[0] || null;
     let i = 0, started = false, retried = false;
     keepAudio(true);
@@ -2393,7 +2396,7 @@ function voiceDiag(box) {
   const res = []; const show = () => { box.innerHTML = `<div class="insight"><div class="grow" style="font-size:13px;line-height:1.7">${res.join('<br>')}</div></div>`; };
   const ss = 'speechSynthesis' in window; const all = ss ? speechSynthesis.getVoices() : [];
   res.push(`نسخة البرنامج: ${APP_VERSION}`, `مفتوح من الشاشة الرئيسية: ${standalone ? 'أيوه' : 'لأ (من Safari)'}`, `القراءة بالصوت مدعومة: ${ss ? 'أيوه' : 'لأ ❌'}`,
-    `عدد أصوات الجهاز: ${all.length}، منها عربي: ${arVoices().length}${arVoices().length ? '' : ' ❌'}`, `الصوت المختار: ${db.prefs.voiceURI || 'تلقائي'}`, `Gemini: ${db.prefs.gmKey ? 'فيه مفتاح' : 'مفيش مفتاح'}${gmOn() ? ' (شغال كافتراضي)' : ''}`,
+    `عدد أصوات الجهاز: ${all.length}، منها عربي: ${arVoices().length}${arVoices().length ? '' : ' ❌'}`, ...arVoices().map(v => `• ${esc(v.name)} — ${voiceQuality(v)}${/compact/i.test(v.voiceURI) ? ' (مضغوط)' : ''}`), `الصوت المختار: ${db.prefs.voiceURI || 'تلقائي'}`, `Gemini: ${db.prefs.gmKey ? 'فيه مفتاح' : 'مفيش مفتاح'}${gmOn() ? ' (شغال كافتراضي)' : ''}`,
     `الصوت مقفول من الإعدادات: ${db.prefs.voiceOff ? 'أيوه ❌' : 'لأ'}`, '⏳ بجرّب صوت الجهاز...');
   show();
   if (!ss) return;
@@ -2408,15 +2411,15 @@ function voiceDiag(box) {
 }
 // أمثلة الأصوات: كل صوت عربي على الجهاز بزرار تشغيل، والمستخدم يختار اللي يعجبه
 const VOICE_SAMPLE = 'أهلاً يا يوسف، صرفت النهارده 250 جنيه، وتقدر تصرف 400 في اليوم لحد القبض.';
-const voiceQuality = v => /premium|مميز/i.test(v.name) ? 'مميز' : /enhanced|محسّن|neural|natural/i.test(v.name) ? 'محسّن' : 'عادي';
+const voiceQuality = v => { const x = v.name + ' ' + (v.voiceURI || ''); return /premium|مميز/i.test(x) ? 'مميز' : /enhanced|محسّن|neural|natural/i.test(x) ? 'محسّن' : 'عادي'; };
 function openVoicePicker() {
   const bad = db.prefs.badVoices || []; const seen = new Set();
-  const list = arVoices().filter(v => !bad.includes(v.voiceURI) && !seen.has(v.name) && seen.add(v.name));
+  const list = arVoices().filter(v => !bad.includes(v.voiceURI) && !seen.has(v.voiceURI) && seen.add(v.voiceURI));
   const row = (uri, name, sub, q) => `<div class="item"><button class="btn small" data-play="${esc(uri)}">${ic('speaker')}</button><div class="grow"><div class="ellipsis">${esc(name)}</div><div class="muted">${sub}</div></div>
     ${q ? `<span class="pill">${q}</span>` : ''}<button class="chip ${(db.prefs.voiceURI || '') === uri ? 'on' : ''}" data-pick="${esc(uri)}">${(db.prefs.voiceURI || '') === uri ? '✓ مختار' : 'اختار'}</button></div>`;
   sheet('أمثلة الأصوات', `<p class="muted">اضغط ${ic('speaker', 'inl')} تسمع كل صوت، واختار اللي يعجبك. «تلقائي» هو الصوت المضمون. أي صوت مايشتغلش بيختفي من القايمة لوحده.</p>
     <h3>أصوات الموبايل (من غير نت)</h3>
-    <div class="list">${row('', 'تلقائي (مضمون)', 'أحسن صوت عربي على موبايلك', '')}${list.map(v => row(v.voiceURI, v.name, v.lang, voiceQuality(v))).join('')}</div>${bad.length ? `<button class="btn small" id="vBadReset" style="margin-top:6px">إظهار الأصوات المخفية (${bad.length})</button>` : ''}
+    <div class="list">${row('', 'تلقائي (مضمون)', 'أحسن صوت عربي على موبايلك', '')}${list.map(v => row(v.voiceURI, v.name, v.lang + (/compact/i.test(v.voiceURI) ? ' · مضغوط' : ''), voiceQuality(v))).join('')}</div><button class="btn small" id="vRefresh" style="margin-top:6px">🔄 تحديث قايمة الأصوات</button>${bad.length ? `<button class="btn small" id="vBadReset" style="margin-top:6px">إظهار الأصوات المخفية (${bad.length})</button>` : ''}
     ${list.some(v => voiceQuality(v) !== 'عادي') ? '' : `<div class="insight w" style="margin-top:12px"><div class="grow"><b>مفيش صوت محسّن على موبايلك</b><br>الأصوات العادية بتبقى آلية. عشان صوت أحلى بكتير:<ol class="steps" style="margin-top:6px"><li>افتح <b>الإعدادات</b> في الآيفون</li><li><b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b></li><li><b>العربية</b> ← اختار <b>Majed</b> أو <b>Laila</b> ونزّل نسخة <b>Enhanced (محسّن)</b></li><li>اقفل التطبيق وافتحه تاني، وارجع هنا اختار الصوت الجديد</li></ol></div></div>`}
     <h3 style="margin-top:16px">أصوات Google Gemini (محتاجة مفتاح ونت)</h3>
     <div class="card" style="margin:8px 0 12px"><b>🔑 مفتاح Gemini API</b>
@@ -2428,6 +2431,7 @@ function openVoicePicker() {
       <button class="chip ${gmOn() && db.prefs.gmVoice === k ? 'on' : ''}" data-gmpick="${k}">${gmOn() && db.prefs.gmVoice === k ? '✓ مختار' : 'اختار'}</button></div>`).join('')}</div>
     <p class="muted">كل صوت بياخد 2-3 ثواني. المفتاح المجاني بيسمح بعدد قليل في الدقيقة، فلو جربت أصوات كتير ورا بعض وماشتغلش، استنى دقيقة وجرّب تاني.</p>
 `, () => {
+    $('#vRefresh').onclick = () => { db.prefs.badVoices = []; save(); try { speechSynthesis.getVoices(); const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { } toast('ثانية...'); setTimeout(openVoicePicker, 800); };
     if ($('#vBadReset')) $('#vBadReset').onclick = () => { db.prefs.badVoices = []; save(); openVoicePicker(); };
     document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => { speak.only = b.dataset.play || null; speak.dev = true; speakForce(VOICE_SAMPLE); speak.only = null; speak.dev = false; });
     document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { db.prefs.voiceURI = b.dataset.pick; db.prefs.gmVoice = 'off'; save(); openVoicePicker(); toast('تم اختيار الصوت'); });
