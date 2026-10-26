@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '52';
+const APP_VERSION = '53';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1939,11 +1939,20 @@ async function pushNote(key, title, body, go) {
   db.prefs.nSent = db.prefs.nSent || {}; if (db.prefs.nSent[key]) return false;
   db.prefs.nSent[key] = Date.now();
   db.notifLog = db.notifLog || []; db.notifLog.unshift({ id: newId(), date: Date.now(), title, body, go: go || '', read: false }); db.notifLog.length = Math.min(db.notifLog.length, 60);
-  if ('Notification' in window && Notification.permission === 'granted') {
-    try { const reg = await navigator.serviceWorker.getRegistration(); const o = { body, icon: 'icons/icon-192.png', tag: key };
-      if (reg) reg.showNotification(title, o); else new Notification(title, o); } catch (e) { }
-  }
+  await showSysNote(title, body, key);
   return true;
+}
+// بيظهر الإشعار على الموبايل نفسه. بيرجّع '' لو نجح أو سبب الفشل
+async function showSysNote(title, body, tag) {
+  if (!('Notification' in window)) return 'unsupported';
+  if (Notification.permission !== 'granted') return Notification.permission;
+  const o = { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: tag || 'masrfi', data: { url: './' } };
+  try {
+    let reg = await navigator.serviceWorker.getRegistration();
+    if (!reg || !reg.active) reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 3000))]);
+    if (reg) { await reg.showNotification(title, o); db.prefs.lastSysNote = Date.now(); return ''; }
+    new Notification(title, o); db.prefs.lastSysNote = Date.now(); return '';
+  } catch (e) { db.prefs.lastNoteErr = String(e && e.message || e); return 'error: ' + db.prefs.lastNoteErr; }
 }
 // بيرجّع الإشعارات المستحقة دلوقتي، كل واحد بمفتاح فريد عشان مايتكررش
 function dueNotifs(now = Date.now()) {
@@ -1997,7 +2006,7 @@ function dueNotifs(now = Date.now()) {
 let nBusy = false;
 async function checkNotifs() {
   if (nBusy) return; nBusy = true;
-  try { let n = 0; for (const x of dueNotifs()) if (await pushNote(x.key, x.title, x.body, x.go)) n++;
+  try { db.prefs.lastNCheck = Date.now(); let n = 0; for (const x of dueNotifs()) if (await pushNote(x.key, x.title, x.body, x.go)) n++;
     // تنضيف المفاتيح القديمة
     const lim = Date.now() - 120 * DAY; Object.keys(db.prefs.nSent || {}).forEach(k => { if (db.prefs.nSent[k] < lim) delete db.prefs.nSent[k]; });
     if (n) { save(); nBadge(); } } catch (e) { console.error(e); }
@@ -2021,7 +2030,8 @@ function openNotifSettings() {
     if (n.set.k === 'day') return `<select class="in sm" data-nv="${n.id}">${WDAYS.map((w, i) => `<option value="${i}" ${+val === i ? 'selected' : ''}>${w}</option>`).join('')}</select>`;
     return `<input class="in sm num" inputmode="numeric" data-nv="${n.id}" value="${val}">`; };
   sheet('إعدادات الإشعارات', `
-    ${perm === 'granted' ? '<div class="insight"><div class="grow">✅ إشعارات الموبايل شغالة.</div></div>' : perm === 'unsupported' ? '<div class="insight"><div class="grow">المتصفح ده مش بيدعم الإشعارات. الإشعارات هتظهر جوه التطبيق في 🔔 بس. على الآيفون ضيف التطبيق للشاشة الرئيسية الأول.</div></div>' : '<button class="btn primary block" id="nPerm">🔔 تفعيل إشعارات الموبايل</button>'}
+    ${notifDiagHtml(perm)}
+    ${perm === 'default' ? '<button class="btn primary block" id="nPerm">🔔 تفعيل إشعارات الموبايل</button>' : ''}
     <div class="row" style="gap:8px;margin:10px 0"><button class="btn small" id="nAllOn">تشغيل الكل</button><button class="btn small" id="nAllOff">إيقاف الكل</button><button class="btn small" id="nTest">جرّب إشعار</button></div>
     <div class="list nset">${NOTIFS.map(n => { const c = nSet(n.id); return `<div class="item"><div class="ico">${n.i}</div><div class="grow"><b>${n.t}</b><div class="muted">${n.d}</div>
       ${n.set ? `<label class="row muted" style="gap:8px;margin-top:6px;font-size:12.5px;white-space:nowrap">${n.set.l} ${ctl(n)}</label>` : ''}</div>
@@ -2035,11 +2045,34 @@ function openNotifSettings() {
     document.querySelectorAll('[data-nv]').forEach(el => el.onchange = () => setP(el.dataset.nv, 'v', el.type === 'time' ? el.value : +el.value || 0));
     $('#nAllOn').onclick = () => { NOTIFS.forEach(n => setP(n.id, 'on', true)); openNotifSettings(); };
     $('#nAllOff').onclick = () => { NOTIFS.forEach(n => setP(n.id, 'on', false)); openNotifSettings(); };
-    $('#nTest').onclick = async () => { await pushNote('test:' + Date.now(), '🔔 محفظتي', 'كده الإشعارات شغالة تمام.', ''); save(); nBadge(); toast('اتبعت إشعار تجريبي'); };
-    if ($('#nPerm')) $('#nPerm').onclick = async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'تم تفعيل الإشعارات' : 'الإشعارات مش مسموحة. فعّلها من إعدادات الآيفون'); openNotifSettings(); };
+    $('#nTest').onclick = async () => {
+      if ('Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { } }
+      const r = await showSysNote('🔔 محفظتي', 'كده الإشعارات شغالة تمام.', 'test');
+      db.notifLog = db.notifLog || []; db.notifLog.unshift({ id: newId(), date: Date.now(), title: '🔔 إشعار تجريبي', body: r ? 'ظهر هنا بس، مش على الموبايل' : 'اتبعت للموبايل', go: '', read: false }); save(); nBadge();
+      toast(r === '' ? 'اتبعت ✓ لو ماظهرش فوق، شوف «تركيز» أو إعدادات الإشعارات في الآيفون' : r === 'unsupported' ? 'لازم تفتح التطبيق من أيقونته على الشاشة الرئيسية' : r === 'denied' ? 'الإشعارات مقفولة: الإعدادات ← الإشعارات ← محفظتي ← سماح' : r === 'default' ? 'لازم توافق على الإشعارات الأول' : 'حصلت مشكلة: ' + r);
+      openNotifSettings(); };
+    if ($('#nPerm')) $('#nPerm').onclick = async () => { let r = 'default'; try { r = await Notification.requestPermission(); } catch (e) { }
+      if (r === 'granted') { await showSysNote('🔔 محفظتي', 'الإشعارات اتفعّلت ✓', 'test'); toast('تم تفعيل الإشعارات'); } else toast('الإشعارات مش مسموحة. فعّلها من إعدادات الآيفون ← محفظتي'); openNotifSettings(); };
     $('#nIcs').onclick = () => { const blob = new Blob([icsAll()], { type: 'text/calendar;charset=utf-8' });
       if (isIOS) location.href = URL.createObjectURL(blob); else shareOrDownload('masrfi-reminders.ics', blob); };
   });
+}
+// فحص سريع يوضح ليه الإشعارات مش بتظهر
+function notifDiagHtml(perm) {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const sa = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  const ver = (navigator.userAgent.match(/OS (\d+)_(\d+)/) || []).slice(1).map(Number);
+  const oldIOS = ios && ver.length && (ver[0] < 16 || (ver[0] === 16 && ver[1] < 4));
+  const swOk = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+  const ago = ts => ts ? ltr(new Date(ts).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) : 'لسه';
+  const row = (ok, t, fix) => `<div class="row" style="gap:8px;align-items:flex-start;margin:4px 0"><span>${ok ? '✅' : '❌'}</span><div class="grow">${t}${!ok && fix ? `<div class="muted" style="font-size:12.5px">${fix}</div>` : ''}</div></div>`;
+  return `<div class="card" style="padding:12px;margin-bottom:10px"><b>🩺 فحص الإشعارات</b>
+    ${ios ? row(!oldIOS, 'نسخة iOS تدعم الإشعارات' + (ver.length ? ` (${ver.join('.')})` : ''), 'محتاج iOS 16.4 أو أحدث. حدّث الآيفون.') : ''}
+    ${ios ? row(sa, 'التطبيق مفتوح من الشاشة الرئيسية', 'افتح محفظتي في سفاري ← زرار المشاركة ← «إضافة إلى الشاشة الرئيسية»، وبعدين افتحه من الأيقونة.') : ''}
+    ${row(perm === 'granted', 'إذن الإشعارات' + (perm === 'denied' ? ': مرفوض' : perm === 'default' ? ': لسه ماتطلبش' : ''), perm === 'denied' ? 'إعدادات الآيفون ← الإشعارات ← محفظتي ← سماح بالإشعارات.' : perm === 'default' ? 'دوس «تفعيل إشعارات الموبايل» تحت ووافق.' : 'المتصفح ده مش بيدعم الإشعارات.')}
+    ${row(swOk, 'خدمة الخلفية شغالة', 'اقفل التطبيق خالص وافتحه تاني.')}
+    <div class="muted" style="font-size:12.5px;margin-top:6px">آخر فحص: ${ago(db.prefs.lastNCheck)} · آخر إشعار وصل للموبايل: ${ago(db.prefs.lastSysNote)}${db.prefs.lastNoteErr ? ` · خطأ: ${esc(db.prefs.lastNoteErr)}` : ''}</div>
+    <div class="muted" style="font-size:12.5px;margin-top:6px">⚠️ الإشعارات بتطلع والتطبيق مفتوح أو لسه مقفول من شوية بس. للمواعيد وهو مقفول خالص استخدم «إضافة المواعيد للتقويم» تحت.</div></div>`;
 }
 // ملف تقويم فيه التذكير اليومي + المواعيد المالية الجاية (60 يوم)
 function icsAll() {
