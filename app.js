@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '67';
+const APP_VERSION = '68';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -563,6 +563,7 @@ function renderHome() {
     ${showReminder ? `<div class="card reminder"><div class="row"><span class="ib warn">${ic('bell')}</span><div class="grow"><b>ماسجّلتش مصاريف النهارده</b><div class="muted">سجّلها دلوقتي عشان تفضل حساباتك مظبوطة</div></div><button class="btn small primary" id="hRem">إضافة</button></div>${usualDay().total ? `<div class="btns"><button class="btn small" id="hUsual">سجّل يومي العادي (≈ ${money(usualDay().total).replace(/\.00$/, '')})</button><button class="btn small" id="hNone">ماصرفتش حاجة</button></div>` : ''}</div>` : ''}
     ${planCard(hide)}
     ${spendCard(cats, exp, hide)}
+    ${(() => { const tl = inRange(dayStart(Date.now()), Date.now() + DAY); const tc = catTotals(tl, 'EXPENSE'); return spendCard(tc, Object.values(tc).reduce((a, v) => a + v, 0), hide, 'صرفت على إيه النهارده', 'hToday') || `<div class="card"><div class="row between"><h3>صرفت على إيه النهارده</h3><span class="num" style="font-weight:700">0</span></div><div class="muted">لسه ماصرفتش حاجة النهارده</div></div>`; })()}
     ${ins.length ? `<div class="card"><h3>رؤى ذكية</h3>${ins.join('')}</div>` : ''}
     ${budgets.length ? `<div class="card tap" id="hBud"><div class="row between"><h3>الميزانيات</h3>${goMore()}</div>${budgets.map(c => { const s = cats[c.id] || 0; const p = s / c.monthlyBudget * 100;
       return `<div style="margin-bottom:10px"><div class="row between"><span>${c.icon} ${esc(lbl(c.name))}</span><span class="num muted">${money(s)} / ${money(c.monthlyBudget)}</span></div>
@@ -586,6 +587,7 @@ function renderHome() {
   const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), tr: () => openTxn(null, { type: 'TRANSFER' }), sms: () => setTab('inbox'),
     cards: () => setTab('cards'), savings: () => setTab('savings'), ctrl: () => setTab('ctrl'), voice: openVoice };
   const hS = $('#hSpend'); if (hS) hS.onclick = () => openSpend();
+  if ($('#hToday')) $('#hToday').onclick = openToday;
   if ($('#hBud')) $('#hBud').onclick = () => { stv.tab = 'budget'; setTab('stats'); };
   view().querySelectorAll('[data-cat]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.cat, period: 'MONTH' }; setTab('txns'); });
   if ($('#hSpeak')) $('#hSpeak').onclick = () => speak(dailyPlan().tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. '));
@@ -1607,14 +1609,27 @@ function openSettings() {
 const PIE_COLORS = ['#1e74d6', '#0f9d58', '#e37400', '#d93025', '#8e44ad', '#00a3a3', '#c2185b', '#7c8a9e'];
 // علامة «التفاصيل ‹» على أي كارت في الرئيسية بيفتح صفحة، عشان يبان إنه بيتداس
 const goMore = (t = 'التفاصيل') => `<span class="go-more">${t} ${ic('chevron')}</span>`;
-function spendCard(cats, exp, hide) {
+function spendCard(cats, exp, hide, title = 'صرفت على إيه الشهر ده', id = 'hSpend') {
   const rows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
   if (!rows.length || !(exp > 0)) return '';
-  return `<button class="card spend-mini" id="hSpend">
-    <div class="row between"><h3>صرفت على إيه الشهر ده</h3><span class="num" style="font-weight:700">${hide ? '••••' : money(exp)}</span></div>
+  return `<button class="card spend-mini" id="${id}">
+    <div class="row between"><h3>${title}</h3><span class="num" style="font-weight:700">${hide ? '••••' : money(exp)}</span></div>
     <div class="stack">${rows.slice(0, 6).map(([, v], i) => `<i style="width:${v / exp * 100}%;background:${PIE_COLORS[i % PIE_COLORS.length]}"></i>`).join('')}</div>
     <div class="row muted" style="gap:10px;font-size:13px">${rows.slice(0, 4).map(([id, v]) => { const c = cat(+id); return `<span>${c ? c.icon : '•'} ${(v / exp * 100).toFixed(0)}%</span>`; }).join('')}<span class="grow"></span>${goMore()}</div>
   </button>`;
+}
+// مصاريف النهارده: التقسيم بالتصنيفات وتحته حركات اليوم
+function openToday() {
+  const list = inRange(dayStart(Date.now()), Date.now() + DAY).sort((a, b) => b.date - a.date);
+  const cats = catTotals(list, 'EXPENSE'); const exp = Object.values(cats).reduce((a, v) => a + v, 0);
+  const rows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+  sheet('صرفت على إيه النهارده', `
+    <div class="row between"><span class="muted">${new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</span><b class="num">${money(exp)} ${base()}</b></div>
+    <div class="spend-mini"><div class="stack" style="margin:10px 0">${rows.map(([, v], i) => `<i style="width:${v / exp * 100}%;background:${PIE_COLORS[i % PIE_COLORS.length]}"></i>`).join('')}</div></div>
+    <div class="cat-grid">${rows.map(([id, v], i) => { const c = cat(+id); const col = PIE_COLORS[i % PIE_COLORS.length];
+      return `<div class="cg"><span class="cg-ic" style="background:${col}22;border-color:${col}">${c ? c.icon : '•'}</span><span class="ellipsis">${c ? esc(lbl(c.name)) : 'بدون تصنيف'}</span><b class="num">${money(v)}</b><span class="pct" style="color:${col}">${(v / exp * 100).toFixed(0)}%</span></div>`; }).join('')}</div>
+    <h3 style="margin-top:14px">حركات النهارده</h3>
+    <div class="list mm-list">${list.map(mmRow).join('')}</div>`, el => { el.querySelectorAll('.mm-tx[data-tx]').forEach(x => x.classList.add('item')); bindTxRows(el); });
 }
 // صفحة المصروفات: شارت في النص، تحته أيقونات التصنيفات، وتحتهم نسبة الصرف من الشهر
 function openSpend(off = 0) {

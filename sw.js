@@ -1,5 +1,5 @@
 // يخزّن ملفات التطبيق ليعمل بدون إنترنت. غيّر رقم الإصدار عند تعديل الملفات.
-const CACHE = 'mywallet-v67';
+const CACHE = 'mywallet-v68';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

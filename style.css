@@ -684,5 +684,5 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .go-more svg.i { width: 14px; height: 14px; transform: scaleX(-1); }
 .pos-row { position: relative; }
 .go-more.pos-more { position: absolute; top: 50%; left: 8px; transform: translateY(-50%); padding: 3px; background: rgba(255,255,255,.18); color: #fff; }
-.spend-mini:active, #hRisk:active, .card.tap:active, .pos-row:active { transform: scale(.985); opacity: .9; }
+#hToday:active, .spend-mini:active, #hRisk:active, .card.tap:active, .pos-row:active { transform: scale(.985); opacity: .9; }
 .card.tap { cursor: pointer; }
