@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '58';
+const APP_VERSION = '59';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1304,6 +1304,7 @@ function openSettings() {
     <h3>المظهر</h3>
     <div class="seg" id="stTheme">${[['auto', 'تلقائي'], ['light', '☀️ فاتح'], ['dark', '🌙 داكن']].map(([k, v]) => `<button data-th="${k}" class="${(db.prefs.theme || 'auto') === k ? 'on' : ''}">${v}</button>`).join('')}</div>
     <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
+    ${skinPickerHtml()}
 
     <h3 style="margin-top:16px">بياناتي المالية</h3>
     <div class="list menu"><div class="item" id="stProf"><div class="ico">💼</div><div class="grow">المرتب ويوم القبض وساعات الشغل</div><span class="muted">${hasProfile() ? money(prof().salary) + ' · يوم ' + prof().payday : 'غير محدد'} ‹</span></div></div>
@@ -1321,6 +1322,7 @@ function openSettings() {
       <div class="item" id="stPin"><div class="ico">🛡️</div><div class="grow">حماية بياناتي</div><span class="muted">${db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل'} ‹</span></div>
       <div class="item" id="stBackup"><div class="ico">💾</div><div class="grow">نسخ احتياطي واستعادة</div><span class="muted">‹</span></div>
     </div>`, () => {
+    bindSkinPicker(openSettings);
     document.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setTheme(b.dataset.th); document.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
     $('#stNotifs').onclick = openNotifSettings;
     $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
@@ -3914,8 +3916,25 @@ document.querySelectorAll('.tabs button').forEach(b => { b.querySelector('span')
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => db.prefs.theme === 'dark' || (db.prefs.theme !== 'light' && darkMq.matches);
 const SKINS = [['mm', 'Money Manager', 'linear-gradient(135deg,#1e88e5 0 60%,#f4511e 60%)'], ['teal', 'محفظتي ب', 'linear-gradient(135deg,#0f766e,#115e59)'], ['wallet', 'Wallet', 'linear-gradient(135deg,#0a84ff 0 33%,#ff9f0a 33% 66%,#30d158 66%)'], ['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
+// الأشكال اللي المستخدم شالها مابتظهرش في الاختيار، ويقدر يرجّعها
+const visSkins = () => SKINS.filter(([k]) => !(db.prefs.hiddenSkins || []).includes(k));
+const curSkin = () => { const k = db.prefs.skin || 'mm'; return visSkins().some(x => x[0] === k) ? k : (visSkins()[0] || SKINS[0])[0]; };
+function skinPickerHtml() {
+  const hid = SKINS.filter(([k]) => (db.prefs.hiddenSkins || []).includes(k));
+  return `<label class="f">شكل التطبيق</label>
+    <div class="skins" id="stSkin">${visSkins().map(([k, n, g]) => `<div class="sk-w"><button data-sk="${k}" class="${curSkin() === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>${visSkins().length > 1 ? `<button class="sk-x" data-skx="${k}" aria-label="إلغاء الشكل">✕</button>` : ''}</div>`).join('')}</div>
+    <p class="muted">دوس ✕ على أي شكل مش عاوزه يتشال من هنا.${hid.length ? '' : ''}</p>
+    ${hid.length ? `<button class="btn small" id="stSkinBack">↩︎ رجّع الأشكال الملغية (${hid.length})</button>` : ''}`;
+}
+function bindSkinPicker(redraw) {
+  document.querySelectorAll('[data-sk]').forEach(b => b.onclick = () => { db.prefs.skin = b.dataset.sk; save(); applyTheme(); redraw(); });
+  document.querySelectorAll('[data-skx]').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.skx; const n = (SKINS.find(x => x[0] === k) || [])[1];
+    if (!confirm(`تلغي شكل «${n}»؟ تقدر ترجّعه بعدين.`)) return;
+    db.prefs.hiddenSkins = [...new Set([...(db.prefs.hiddenSkins || []), k])]; save(); applyTheme(); redraw(); toast(`اتلغى «${n}»`); });
+  if ($('#stSkinBack')) $('#stSkinBack').onclick = () => { db.prefs.hiddenSkins = []; save(); redraw(); toast('رجعت كل الأشكال'); };
+}
 function applyTheme() {
-  const t = db.prefs.theme; document.documentElement.dataset.skin = 'mm';
+  const t = db.prefs.theme; document.documentElement.dataset.skin = curSkin();
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   $('#themeBtn').innerHTML = ic(isDark() ? 'sun' : 'moon');
   document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.documentElement).getPropertyValue('--band-1').trim() || '#062a57';
