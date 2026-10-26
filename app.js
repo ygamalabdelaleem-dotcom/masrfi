@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '57';
+const APP_VERSION = '58';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1304,8 +1304,7 @@ function openSettings() {
     <h3>المظهر</h3>
     <div class="seg" id="stTheme">${[['auto', 'تلقائي'], ['light', '☀️ فاتح'], ['dark', '🌙 داكن']].map(([k, v]) => `<button data-th="${k}" class="${(db.prefs.theme || 'auto') === k ? 'on' : ''}">${v}</button>`).join('')}</div>
     <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
-    <label class="f">شكل التطبيق</label>
-    <div class="skins" id="stSkin">${SKINS.map(([k, n, g]) => `<button data-sk="${k}" class="${(db.prefs.skin || 'mm') === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>`).join('')}</div>
+
     <h3 style="margin-top:16px">بياناتي المالية</h3>
     <div class="list menu"><div class="item" id="stProf"><div class="ico">💼</div><div class="grow">المرتب ويوم القبض وساعات الشغل</div><span class="muted">${hasProfile() ? money(prof().salary) + ' · يوم ' + prof().payday : 'غير محدد'} ‹</span></div></div>
     <h3 style="margin-top:16px">الإشعارات</h3>
@@ -1322,7 +1321,6 @@ function openSettings() {
       <div class="item" id="stPin"><div class="ico">🛡️</div><div class="grow">حماية بياناتي</div><span class="muted">${db.prefs.pinHash ? 'مفعّل' : 'غير مفعّل'} ‹</span></div>
       <div class="item" id="stBackup"><div class="ico">💾</div><div class="grow">نسخ احتياطي واستعادة</div><span class="muted">‹</span></div>
     </div>`, () => {
-    document.querySelectorAll('[data-sk]').forEach(b => b.onclick = () => { db.prefs.skin = b.dataset.sk; save(); applyTheme(); document.querySelectorAll('[data-sk]').forEach(x => x.classList.toggle('on', x === b)); });
     document.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setTheme(b.dataset.th); document.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
     $('#stNotifs').onclick = openNotifSettings;
     $('#stAuto').onchange = e => { db.prefs.autoAddSms = e.target.checked; save(); };
@@ -3917,7 +3915,7 @@ const darkMq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => db.prefs.theme === 'dark' || (db.prefs.theme !== 'light' && darkMq.matches);
 const SKINS = [['mm', 'Money Manager', 'linear-gradient(135deg,#1e88e5 0 60%,#f4511e 60%)'], ['teal', 'محفظتي ب', 'linear-gradient(135deg,#0f766e,#115e59)'], ['wallet', 'Wallet', 'linear-gradient(135deg,#0a84ff 0 33%,#ff9f0a 33% 66%,#30d158 66%)'], ['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
 function applyTheme() {
-  const t = db.prefs.theme; document.documentElement.dataset.skin = db.prefs.skin || 'mm';
+  const t = db.prefs.theme; document.documentElement.dataset.skin = 'mm';
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   $('#themeBtn').innerHTML = ic(isDark() ? 'sun' : 'moon');
   document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.documentElement).getPropertyValue('--band-1').trim() || '#062a57';
