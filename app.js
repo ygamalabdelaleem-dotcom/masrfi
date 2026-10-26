@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '54';
+const APP_VERSION = '55';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1289,7 +1289,7 @@ function openSettings() {
     <div class="seg" id="stTheme">${[['auto', 'تلقائي'], ['light', '☀️ فاتح'], ['dark', '🌙 داكن']].map(([k, v]) => `<button data-th="${k}" class="${(db.prefs.theme || 'auto') === k ? 'on' : ''}">${v}</button>`).join('')}</div>
     <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
     <label class="f">شكل التطبيق</label>
-    <div class="skins" id="stSkin">${SKINS.map(([k, n, g]) => `<button data-sk="${k}" class="${(db.prefs.skin || 'fresh') === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>`).join('')}</div>
+    <div class="skins" id="stSkin">${SKINS.map(([k, n, g]) => `<button data-sk="${k}" class="${(db.prefs.skin || 'wallet') === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>`).join('')}</div>
     <h3 style="margin-top:16px">بياناتي المالية</h3>
     <div class="list menu"><div class="item" id="stProf"><div class="ico">💼</div><div class="grow">المرتب ويوم القبض وساعات الشغل</div><span class="muted">${hasProfile() ? money(prof().salary) + ' · يوم ' + prof().payday : 'غير محدد'} ‹</span></div></div>
     <h3 style="margin-top:16px">الإشعارات</h3>
@@ -3738,9 +3738,9 @@ document.querySelectorAll('.tabs button').forEach(b => { b.querySelector('span')
 // الوضع الفاتح / الداكن: auto يتبع إعداد الآيفون
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => db.prefs.theme === 'dark' || (db.prefs.theme !== 'light' && darkMq.matches);
-const SKINS = [['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
+const SKINS = [['wallet', 'Wallet', 'linear-gradient(135deg,#0a84ff 0 33%,#ff9f0a 33% 66%,#30d158 66%)'], ['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
 function applyTheme() {
-  const t = db.prefs.theme; document.documentElement.dataset.skin = db.prefs.skin || 'fresh';
+  const t = db.prefs.theme; document.documentElement.dataset.skin = db.prefs.skin || 'wallet';
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   $('#themeBtn').innerHTML = ic(isDark() ? 'sun' : 'moon');
   document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.documentElement).getPropertyValue('--band-1').trim() || '#062a57';
