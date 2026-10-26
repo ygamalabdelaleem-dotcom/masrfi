@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '56';
+const APP_VERSION = '57';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -1305,7 +1305,7 @@ function openSettings() {
     <div class="seg" id="stTheme">${[['auto', 'تلقائي'], ['light', '☀️ فاتح'], ['dark', '🌙 داكن']].map(([k, v]) => `<button data-th="${k}" class="${(db.prefs.theme || 'auto') === k ? 'on' : ''}">${v}</button>`).join('')}</div>
     <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
     <label class="f">شكل التطبيق</label>
-    <div class="skins" id="stSkin">${SKINS.map(([k, n, g]) => `<button data-sk="${k}" class="${(db.prefs.skin || 'teal') === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>`).join('')}</div>
+    <div class="skins" id="stSkin">${SKINS.map(([k, n, g]) => `<button data-sk="${k}" class="${(db.prefs.skin || 'mm') === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>`).join('')}</div>
     <h3 style="margin-top:16px">بياناتي المالية</h3>
     <div class="list menu"><div class="item" id="stProf"><div class="ico">💼</div><div class="grow">المرتب ويوم القبض وساعات الشغل</div><span class="muted">${hasProfile() ? money(prof().salary) + ' · يوم ' + prof().payday : 'غير محدد'} ‹</span></div></div>
     <h3 style="margin-top:16px">الإشعارات</h3>
@@ -2925,6 +2925,7 @@ function parseExpenses(raw) {
     const mm = /(?:^|\s)(?:من|في|عند)\s+(.+)$/.exec(st);
     let categoryId = catOfWords(st, income);
     let merchant = mm ? mm[1].replace(/\d+(\.\d+)?/g, '').replace(/(ب?الكارت|ب?الفيزا|كاش|نقدي)/g, '').trim() : '';
+    if (merchant && accOfWords(nrm(merchant))) merchant = '';
     if (!categoryId) { const guess = words2.join(' '); categoryId = suggestCategory(merchant || guess, income ? 'CREDIT' : 'DEBIT'); if (!merchant) merchant = guess; }
     if (!merchant) merchant = words2.filter(w => !/^(بال|ال)?(كارت|فيزا|كاش|نقدي|حاجه|حاجات|جنيه)$/.test(w) && !accOfWords(w)).join(' ');
     if (categoryId && merchant && nrm(lbl((cat(categoryId) || {}).name || '')).replace(/^ال/, '') === nrm(merchant).replace(/^ال/, '')) merchant = '';
@@ -3329,14 +3330,65 @@ function openSmsPaste() {
   });
 }
 
+// صفحة الحسابات بستايل Money Manager: أصول بالأزرق والتزامات بالأحمر، متقسمة لمجموعات، والكارت فيه المستحق والمتبقي
+const ACC_GROUPS = [['CASH', 'نقدي'], ['BANK', 'حسابات بنكية'], ['WALLET', 'محافظ إلكترونية'], ['SAVING', 'توفير'], ['GOLD', 'ذهب'], ['CREDIT', 'بطاقات ائتمان']];
 function openAccounts() {
-  const bal = balances();
-  sheet('الحسابات', `<div class="list">${db.accounts.map(a => `<div class="item" data-a="${a.id}"><div class="ico blue">${accIcon(a)}</div>
-    <div class="grow"><div>${esc(lbl(a.name))}${a.archived ? ' <span class="muted">(مؤرشف)</span>' : ''}</div><div class="muted">${ACC_TYPES[a.type] || a.type}${a.last4 ? ' · ••' + esc(a.last4) : ''}</div></div>
-    <div class="num">${money(bal[a.id] || 0)} <small class="muted">${a.currency}</small></div></div>`).join('')}</div>
-    <button class="btn primary block" id="aNew" style="margin-top:10px">＋ حساب جديد</button>`, () => {
-    document.querySelectorAll('[data-a]').forEach(el => el.onclick = () => editAccount(acc(+el.dataset.a)));
+  const bal = balances(); const live = db.accounts.filter(a => !a.archived);
+  const v = a => conv(bal[a.id] || 0, a.currency);
+  const assets = live.filter(a => v(a) > 0).reduce((s0, a) => s0 + v(a), 0); const liab = live.filter(a => v(a) < 0).reduce((s0, a) => s0 - v(a), 0);
+  const cs = cardsSummary(...monthRange(0)); const instOut = cs.reduce((s0, c) => s0 + c.instOut, 0);
+  const amt = (x, cls) => `<span class="num ${cls || (x < 0 ? 'mm-l' : 'mm-a')}">${money(x)}</span>`;
+  const groups = ACC_GROUPS.map(([k, name]) => { const list = live.filter(a => a.type === k); if (!list.length) return '';
+    const tot = list.reduce((s0, a) => s0 + v(a), 0);
+    if (k === 'CREDIT') return `<div class="mm-g"><b>${name}</b><span class="mm-h2"><small>مستحق السداد</small><small>أقساط متبقية</small></span></div>
+      ${list.map(a => { const c = cs.find(x => x.a.id === a.id) || {}; return `<div class="mm-r" data-ad="${a.id}"><span class="grow ellipsis">${esc(lbl(a.name))}</span>
+        <span class="mm-h2">${amt(-(c.due ? c.due.amt : c.owed || 0), 'mm-l')}${amt(c.instOut || 0, 'mm-l')}</span></div>`; }).join('')}`;
+    return `<div class="mm-g"><b>${name}</b>${amt(tot)}</div>${list.map(a => `<div class="mm-r" data-ad="${a.id}"><span class="grow ellipsis">${esc(lbl(a.name))}${a.currency !== base() ? ` <small class="muted">${a.currency}</small>` : ''}</span>${amt(bal[a.id] || 0)}</div>`).join('')}`; }).join('');
+  sheet('الحسابات', `
+    <div class="mm-sum"><div><small>الأصول</small>${amt(assets, 'mm-a')}</div><div><small>الالتزامات</small>${amt(liab + instOut, 'mm-l')}</div><div><small>صافي الثروة</small>${amt(assets - liab - instOut, 'mm-t')}</div></div>
+    <div class="mm-list">${groups || '<div class="empty">مفيش حسابات</div>'}</div>
+    ${db.accounts.some(a => a.archived) ? `<p class="muted">فيه ${db.accounts.filter(a => a.archived).length} حساب مؤرشف</p>` : ''}
+    <div class="btns"><button class="btn primary" id="aNew">＋ حساب جديد</button><button class="btn" id="aArc">المؤرشفة</button></div>`, () => {
+    document.querySelectorAll('[data-ad]').forEach(el => el.onclick = () => openAccountDetail(acc(+el.dataset.ad)));
     $('#aNew').onclick = () => editAccount();
+    $('#aArc').onclick = () => sheet('الحسابات المؤرشفة', `<div class="list">${db.accounts.filter(a => a.archived).map(a => `<div class="item" data-a="${a.id}"><div class="grow">${esc(lbl(a.name))}</div><span class="num">${money(bal[a.id] || 0)}</span></div>`).join('') || '<div class="empty">مفيش</div>'}</div>`,
+      () => document.querySelectorAll('[data-a]').forEach(el => el.onclick = () => editAccount(acc(+el.dataset.a))));
+  });
+}
+// رصيد الحساب في آخر لحظة من يوم معيّن
+function balanceAt(id, ts) {
+  const a = acc(id); let b = +a.initialBalance || 0;
+  db.txns.forEach(t => { if (t.date > ts) return;
+    if (t.accountId === id) b += t.type === 'INCOME' ? t.amount : t.type === 'ADJUST' ? (t.dir || 1) * t.amount : -t.amount;
+    if (t.type === 'TRANSFER' && t.toAccountId === id) b += (t.toAmount ?? t.amount) + 0; });
+  return b;
+}
+// تفاصيل الحساب: رسم رصيده آخر 6 شهور، ومصاريفه بالنسب، وحركات الشهر
+function openAccountDetail(a, off = 0) {
+  const [f, t] = monthRange(off); const months = [];
+  for (let i = 5; i >= 0; i--) { const [, e] = monthRange(off - i); months.push({ e, v: balanceAt(a.id, Math.min(e, Date.now())), l: new Date(e).toLocaleDateString('ar-EG', { month: 'short' }) }); }
+  const vs = months.map(m => m.v); const mn = Math.min(...vs), mx = Math.max(...vs); const W = 320, H = 120, pad = 18;
+  const x = i => pad + i * (W - 2 * pad) / 5; const y = v => mx === mn ? H / 2 : pad + (mx - v) / (mx - mn) * (H - 2 * pad);
+  const chart = `<svg viewBox="0 0 ${W} ${H + 18}" class="mm-chart"><polyline points="${months.map((m, i) => `${x(i)},${y(m.v)}`).join(' ')}"/>
+    ${months.map((m, i) => `<circle cx="${x(i)}" cy="${y(m.v)}" r="3.5"/><text x="${x(i)}" y="${y(m.v) - 8}" class="v">${Math.round(m.v).toLocaleString('en')}</text><text x="${x(i)}" y="${H + 14}" class="l">${m.l}</text>`).join('')}</svg>`;
+  const tx = db.txns.filter(x => (x.accountId === a.id || x.toAccountId === a.id) && x.date >= f && x.date <= t).sort((p, q) => q.date - p.date);
+  const exp = tx.filter(x => x.type === 'EXPENSE' && x.accountId === a.id); const tot = exp.reduce((s0, x) => s0 + x.amount, 0);
+  const byCat = {}; exp.forEach(x => byCat[x.categoryId] = (byCat[x.categoryId] || 0) + x.amount);
+  const cats = Object.keys(byCat).sort((p, q) => byCat[q] - byCat[p]);
+  const inc = tx.filter(x => x.accountId === a.id && x.type === 'INCOME' || x.toAccountId === a.id).reduce((s0, x) => s0 + (x.toAccountId === a.id ? (x.toAmount ?? x.amount) : x.amount), 0);
+  const out = tx.filter(x => x.accountId === a.id && (x.type === 'EXPENSE' || x.type === 'TRANSFER')).reduce((s0, x) => s0 + x.amount, 0);
+  const c = a.type === 'CREDIT' ? cardsSummary(f, t).find(z => z.a.id === a.id) : null;
+  sheet(lbl(a.name), `
+    <div class="mm-mon"><button class="btn small" id="adP">‹</button><b>${new Date(f).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</b><button class="btn small" id="adN" ${off >= 0 ? 'disabled' : ''}>›</button></div>
+    <div class="mm-sum"><div><small>داخل</small><span class="num mm-a">${money(inc)}</span></div><div><small>خارج</small><span class="num mm-l">${money(out)}</span></div><div><small>${a.type === 'CREDIT' ? 'المستحق' : 'الرصيد'}</small><span class="num mm-t">${money(a.type === 'CREDIT' && c ? -(c.due ? c.due.amt : c.owed) : balanceAt(a.id, Math.min(t, Date.now())))}</span></div></div>
+    ${c ? `<div class="mm-sum"><div><small>الحد</small><span class="num">${money(c.lim)}</span></div><div><small>أقساط متبقية</small><span class="num mm-l">${money(c.instOut)}</span></div><div><small>المتاح</small><span class="num mm-a">${money(c.avail)}</span></div></div>` : ''}
+    <div class="card" style="padding:10px 8px">${chart}</div>
+    ${cats.length ? `<h3>المصاريف</h3><div class="mm-list">${cats.map((k, i) => `<div class="mm-r"><span class="mm-pct" style="background:${PIE_COLORS[i % PIE_COLORS.length]}">${Math.round(byCat[k] / tot * 100)}%</span><span class="grow ellipsis">${cat(+k) ? cat(+k).icon + ' ' + esc(lbl(cat(+k).name)) : 'بدون تصنيف'}</span><span class="num">${money(byCat[k])}</span></div>`).join('')}</div>` : ''}
+    <h3 style="margin-top:12px">الحركات</h3><div class="list">${tx.slice(0, 60).map(txRow).join('') || '<div class="empty">مفيش حركات الشهر ده</div>'}</div>
+    <div class="btns"><button class="btn primary" id="adBal">⚖️ تعديل الرصيد</button><button class="btn" id="adEd">✏️ تعديل الحساب</button></div>`, () => {
+    $('#adP').onclick = () => openAccountDetail(a, off - 1); $('#adN').onclick = () => off < 0 && openAccountDetail(a, off + 1);
+    $('#adBal').onclick = () => a.type === 'CREDIT' ? editAccount(a) : openBalanceEdit(a); $('#adEd').onclick = () => editAccount(a);
+    bindTxRows($('#sheet'));
   });
 }
 function editAccount(a, fromCards) {
@@ -3863,9 +3915,9 @@ document.querySelectorAll('.tabs button').forEach(b => { b.querySelector('span')
 // الوضع الفاتح / الداكن: auto يتبع إعداد الآيفون
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => db.prefs.theme === 'dark' || (db.prefs.theme !== 'light' && darkMq.matches);
-const SKINS = [['teal', 'محفظتي ب', 'linear-gradient(135deg,#0f766e,#115e59)'], ['wallet', 'Wallet', 'linear-gradient(135deg,#0a84ff 0 33%,#ff9f0a 33% 66%,#30d158 66%)'], ['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
+const SKINS = [['mm', 'Money Manager', 'linear-gradient(135deg,#1e88e5 0 60%,#f4511e 60%)'], ['teal', 'محفظتي ب', 'linear-gradient(135deg,#0f766e,#115e59)'], ['wallet', 'Wallet', 'linear-gradient(135deg,#0a84ff 0 33%,#ff9f0a 33% 66%,#30d158 66%)'], ['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
 function applyTheme() {
-  const t = db.prefs.theme; document.documentElement.dataset.skin = db.prefs.skin || 'teal';
+  const t = db.prefs.theme; document.documentElement.dataset.skin = db.prefs.skin || 'mm';
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   $('#themeBtn').innerHTML = ic(isDark() ? 'sun' : 'moon');
   document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.documentElement).getPropertyValue('--band-1').trim() || '#062a57';
