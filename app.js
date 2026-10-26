@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '61';
+const APP_VERSION = '62';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -428,7 +428,7 @@ let filter = { q: '', type: '', accountId: 0, categoryId: 0, period: 'ALL' };
 let reportPeriod = 'MONTH', reportType = 'EXPENSE';
 const view = () => $('#view');
 
-const SUB_VIEWS = { cards: 'more', savings: 'home', inbox: 'home', ctrl: 'home' };
+const SUB_VIEWS = { reports: 'stats', cards: 'more', savings: 'home', inbox: 'home', ctrl: 'home' };
 function setTab(t) {
   if (t === 'txns') { txv.off = filter.period === 'LAST' ? -1 : 0; if (txv.mode === 'monthly') txv.mode = 'daily'; }
   if (t === 'add') { openTxn(); return; }
@@ -440,12 +440,12 @@ function setTab(t) {
 }
 
 function render() {
-  const titles = { home: 'محفظتي', txns: 'الحركات', reports: 'التقارير', more: 'المزيد', cards: 'بطاقات الائتمان', savings: 'الادخار', inbox: 'رسائل البنك', ctrl: 'المتحكم المالي' };
+  const titles = { home: 'محفظتي', txns: 'الحركات', stats: 'الإحصائيات', reports: 'التقارير', more: 'المزيد', cards: 'بطاقات الائتمان', savings: 'الادخار', inbox: 'رسائل البنك', ctrl: 'المتحكم المالي' };
   $('#title').textContent = titles[tab] || 'محفظتي';
   const back = $('#back');
   back.classList.toggle('hidden', !SUB_VIEWS[tab]);
   back.onclick = () => setTab(SUB_VIEWS[tab]);
-  ({ home: renderHome, txns: renderTxns, reports: renderReports, more: renderMore, cards: renderCards, savings: renderSavings, inbox: renderInbox, ctrl: renderCtrl })[tab]();
+  ({ home: renderHome, txns: renderTxns, stats: renderStats, reports: renderReports, more: renderMore, cards: renderCards, savings: renderSavings, inbox: renderInbox, ctrl: renderCtrl })[tab]();
 }
 
 function txRow(t) {
@@ -702,6 +702,68 @@ function renderTxns() {
         openTxn(null, { type: t.type, amount: t.amount, accountId: t.accountId, toAccountId: t.toAccountId, categoryId: t.categoryId, merchant: t.merchant, note: '', date: Date.now() }); }); }); };
   view().querySelectorAll('.mm-tx[data-tx]').forEach(el => el.classList.add('item'));
   bindTxRows(view());
+}
+
+// صفحة الإحصائيات زي Money Manager: دائرة ملونة بأسماء التصنيفات ونسبها، وتحتها القائمة
+const STAT_COLORS = ['#ff6b5e', '#ff9f43', '#ffc93c', '#ffe14d', '#c5e04b', '#6bd36b', '#4fd8c8', '#5aa9e6', '#8b80f9', '#d27bf0', '#f472b6', '#9aa5b1'];
+let stv = { tab: 'stats', per: 'M', off: 0, type: 'EXPENSE' };
+function statRange() {
+  const n = new Date(); const o = stv.off;
+  if (stv.per === 'W') { const s0 = dayStart(Date.now()) - ((n.getDay() + 1) % 7) * DAY + o * 7 * DAY; return [s0, s0 + 7 * DAY - 1, `${new Date(s0).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })} - ${new Date(s0 + 6 * DAY).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}`]; }
+  if (stv.per === 'Y') { const y = n.getFullYear() + o; return [new Date(y, 0, 1).getTime(), new Date(y + 1, 0, 1).getTime() - 1, String(y)]; }
+  const [f, t] = monthRange(o); return [f, t, new Date(f).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })];
+}
+// دايرة SVG والأسامي برا بخطوط، وبنبعد الأسامي عن بعض عشان ماتركبش
+function pieSvg(items) {
+  const W = 390, H = 290, cx = W / 2, cy = H / 2, r = 84; const tot = items.reduce((a, x) => a + x.v, 0); if (!tot) return '';
+  let a0 = -Math.PI / 2; const parts = [], labels = [];
+  items.forEach((x, i) => { const a1 = a0 + x.v / tot * 2 * Math.PI; const big = a1 - a0 > Math.PI ? 1 : 0;
+    const p = (a, rr = r) => [cx + rr * Math.cos(a), cy + rr * Math.sin(a)];
+    const [x0, y0] = p(a0), [x1, y1] = p(a1);
+    parts.push(items.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${x.c}"/>` : `<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${big} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="${x.c}" stroke="var(--card)" stroke-width="1.5"/>`);
+    const am = (a0 + a1) / 2; if (x.v / tot >= 0.015 && labels.length < 10) labels.push({ am, c: x.c, n: x.n, pc: (x.v / tot * 100).toFixed(1), right: Math.cos(am) >= 0, y: cy + (r + 22) * Math.sin(am) });
+    a0 = a1; });
+  [true, false].forEach(side => { const L = labels.filter(l => l.right === side).sort((p, q) => p.y - q.y); let last = -1e9;
+    L.forEach(l => { l.y = Math.max(l.y, last + 30, 16); last = l.y; }); for (let i = L.length - 1, lim = H - 18; i >= 0; i--) { if (L[i].y > lim) L[i].y = lim; lim = L[i].y - 30; } });
+  const lab = labels.map(l => { const sx = cx + r * Math.cos(l.am), sy = cy + r * Math.sin(l.am); const ex = cx + (r + 16) * Math.cos(l.am), tx = l.right ? cx + r + 26 : cx - r - 26;
+    return `<path d="M${sx.toFixed(1)},${sy.toFixed(1)} Q${ex.toFixed(1)},${(cy + (r + 16) * Math.sin(l.am)).toFixed(1)} ${tx},${l.y.toFixed(1)}" fill="none" stroke="${l.c}" stroke-width="1.3"/>
+      <text x="${l.right ? tx + 4 : tx - 4}" y="${(l.y - 3).toFixed(1)}" text-anchor="${l.right ? 'start' : 'end'}" class="pl-n">${esc(l.n)}</text><text x="${l.right ? tx + 4 : tx - 4}" y="${(l.y + 12).toFixed(1)}" text-anchor="${l.right ? 'start' : 'end'}" class="pl-p">${l.pc}%</text>`; }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="pie-svg">${parts.join('')}${lab}</svg>`;
+}
+function renderStats() {
+  const [f, t, label] = statRange(); const list = inRange(f, t); const [inc, exp] = typeTotals(list);
+  const head = `<div class="st-head">
+      <div class="st-seg">${[['stats', 'إحصائيات'], ['budget', 'الميزانية'], ['note', 'ملاحظات']].map(([k, v]) => `<button data-stt="${k}" class="${stv.tab === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+      <select id="stPer" class="st-per">${[['W', 'أسبوعي'], ['M', 'شهري'], ['Y', 'سنوي']].map(([k, v]) => `<option value="${k}" ${stv.per === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="st-mon"><button id="stP">‹</button><b>${label}</b><button id="stN" ${stv.off >= 0 ? 'disabled' : ''}>›</button></div>`;
+  let body = '';
+  if (stv.tab === 'stats') {
+    const cats = catTotals(list, stv.type); const tot = Object.values(cats).reduce((a, v) => a + v, 0);
+    const ks = Object.keys(cats).filter(k => cats[k] > 0).sort((a, b) => cats[b] - cats[a]);
+    const items = ks.map((k, i) => ({ k, v: cats[k], n: cat(+k) ? lbl(cat(+k).name) : 'بدون تصنيف', ic: cat(+k) ? cat(+k).icon : '📦', c: STAT_COLORS[i % STAT_COLORS.length] }));
+    body = `<div class="st-io"><button data-sty="INCOME" class="${stv.type === 'INCOME' ? 'on' : ''}">الدخل <b class="num">${money(inc)}</b></button><button data-sty="EXPENSE" class="${stv.type === 'EXPENSE' ? 'on' : ''}">المصروفات <b class="num">${money(exp)}</b></button></div>
+      ${items.length ? `<div class="card st-pie">${pieSvg(items)}</div><div class="mm-list">${items.map(x => `<div class="mm-r" data-stc="${x.k}"><span class="mm-pct" style="background:${x.c}">${Math.round(x.v / tot * 100)}%</span><span class="grow ellipsis">${x.ic} ${esc(x.n)}</span><span class="num">${money(x.v)}</span></div>`).join('')}</div>` : `<div class="empty">مفيش ${stv.type === 'INCOME' ? 'دخل' : 'مصروفات'} في الفترة دي</div>`}`;
+  } else if (stv.tab === 'budget') {
+    const cats = catTotals(list, 'EXPENSE'); const bud = db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome);
+    const k = stv.per === 'Y' ? 12 : stv.per === 'W' ? 7 / 30 : 1; const totB = bud.reduce((a, c) => a + c.monthlyBudget * k, 0); const totS = bud.reduce((a, c) => a + (cats[c.id] || 0), 0);
+    body = bud.length ? `<div class="card"><div class="row between"><b>الميزانية الكلية</b><span class="num">${money(totS)} / ${money(totB)}</span></div><div class="bar ${totS > totB ? 'over' : totS > totB * .8 ? 'warn' : 'good'}"><i style="width:${Math.min(100, totS / totB * 100)}%"></i></div><div class="muted" style="margin-top:6px">فاضل ${money(Math.max(0, totB - totS))}</div></div>
+      <div class="card">${bud.map(c => { const v = cats[c.id] || 0, b = c.monthlyBudget * k, p = v / b * 100; return `<div class="rule"><div class="row between"><span>${c.icon} ${esc(lbl(c.name))}</span><span class="num muted">${money(v)} / ${money(b)}</span></div><div class="bar ${p >= 100 ? 'over' : p >= 80 ? 'warn' : 'good'}"><i style="width:${Math.min(100, p)}%"></i></div></div>`; }).join('')}</div>`
+      : `<div class="empty">مفيش ميزانيات. حددها من المزيد ← التصنيفات والميزانيات.</div><button class="btn primary block" id="stBud">حدد الميزانيات</button>`;
+  } else {
+    const g = {}; list.filter(x => x.type === stv.type).forEach(x => { const k = (x.merchant || '').trim() || '(من غير وصف)'; g[k] = g[k] || { n: 0, v: 0 }; g[k].n++; g[k].v += conv(x.amount, txCur(x)); });
+    const ks = Object.keys(g).sort((a, b) => g[b].v - g[a].v);
+    body = `<div class="st-io"><button data-sty="INCOME" class="${stv.type === 'INCOME' ? 'on' : ''}">الدخل</button><button data-sty="EXPENSE" class="${stv.type === 'EXPENSE' ? 'on' : ''}">المصروفات</button></div>
+      ${ks.length ? `<div class="mm-list">${ks.map(k => `<div class="mm-r" data-stn="${esc(k)}"><span class="grow ellipsis">${esc(k)}</span><span class="muted">${g[k].n} مرة</span><span class="num">${money(g[k].v)}</span></div>`).join('')}</div>` : '<div class="empty">مفيش</div>'}`;
+  }
+  view().innerHTML = head + body + `<button class="btn block" id="stRep" style="margin-top:14px">📊 التقارير التفصيلية</button>`;
+  view().querySelectorAll('[data-stt]').forEach(b => b.onclick = () => { stv.tab = b.dataset.stt; renderStats(); });
+  view().querySelectorAll('[data-sty]').forEach(b => b.onclick = () => { stv.type = b.dataset.sty; renderStats(); });
+  $('#stPer').onchange = e => { stv.per = e.target.value; stv.off = 0; renderStats(); };
+  $('#stP').onclick = () => { stv.off--; renderStats(); }; $('#stN').onclick = () => { if (stv.off < 0) { stv.off++; renderStats(); } };
+  $('#stRep').onclick = () => setTab('reports');
+  if ($('#stBud')) $('#stBud').onclick = openCategories;
+  view().querySelectorAll('[data-stc]').forEach(el => el.onclick = () => { filter = { q: '', type: stv.type, accountId: 0, categoryId: +el.dataset.stc, period: 'MONTH' }; setTab('txns'); });
+  view().querySelectorAll('[data-stn]').forEach(el => el.onclick = () => { filter = { q: el.dataset.stn.replace(/^\(من غير وصف\)$/, ''), type: stv.type, accountId: 0, categoryId: 0, period: 'MONTH' }; setTab('txns'); });
 }
 
 function renderReports() {
@@ -3979,7 +4041,7 @@ $('#settingsBtn').onclick = openSettings;
 $('#bellBtn').onclick = openNotifs;
 $('#settingsBtn').innerHTML = ic('settings');
 $('#back').innerHTML = ic('back');
-const TAB_ICONS = { home: 'home', txns: 'list', add: 'plus', reports: 'chart', more: 'grid' };
+const TAB_ICONS = { home: 'home', txns: 'list', add: 'plus', stats: 'chart', more: 'grid' };
 document.querySelectorAll('.tabs button').forEach(b => { b.querySelector('span').innerHTML = ic(TAB_ICONS[b.dataset.tab]); });
 // الوضع الفاتح / الداكن: auto يتبع إعداد الآيفون
 const darkMq = matchMedia('(prefers-color-scheme: dark)');

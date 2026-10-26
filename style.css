@@ -626,3 +626,23 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .mm-sr { padding: 7px 0; border-bottom: 1px solid var(--line); }
 .fab-add { position: fixed; z-index: 12; right: 16px; bottom: calc(92px + env(safe-area-inset-bottom)); width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--exp); color: #fff; display: grid; place-items: center; box-shadow: 0 6px 18px color-mix(in srgb, var(--exp) 45%, transparent); }
 .fab-add svg.i { width: 28px; height: 28px; }
+
+/* صفحة الإحصائيات */
+.st-head { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; }
+.st-seg { flex: 1; display: flex; background: var(--chip); border-radius: 10px; padding: 3px; }
+.st-seg button { flex: 1; border: 0; background: none; padding: 8px 0; border-radius: 8px; font-weight: 600; color: var(--muted); font-size: 14px; }
+.st-seg button.on { background: var(--card); color: var(--exp); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.st-per { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 14px; }
+.st-mon { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.st-mon b { font-size: 16px; }
+.st-mon button { border: 0; background: none; color: var(--text); font-size: 26px; width: 40px; height: 36px; }
+.st-mon button:disabled { opacity: .25; }
+.st-io { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); margin: 0 -16px 10px; background: var(--card); }
+.st-io button { border: 0; background: none; padding: 11px 6px 9px; color: var(--muted); font-size: 13.5px; border-bottom: 2.5px solid transparent; }
+.st-io button b { font-size: 14px; margin-inline-start: 4px; }
+.st-io button.on { color: var(--text); border-bottom-color: var(--exp); }
+.st-io button[data-sty="INCOME"].on b { color: var(--primary); } .st-io button[data-sty="EXPENSE"].on b { color: var(--exp); }
+.st-pie { padding: 6px; }
+.pie-svg { width: 100%; height: auto; display: block; direction: ltr; }
+.pie-svg .pl-n { font-size: 12px; font-weight: 700; fill: var(--text); }
+.pie-svg .pl-p { font-size: 11.5px; fill: var(--muted); }
