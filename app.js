@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '51';
+const APP_VERSION = '52';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -160,6 +160,7 @@ function balances() {
   db.txns.forEach(t => {
     if (t.type === 'INCOME') b[t.accountId] = (b[t.accountId] || 0) + t.amount;
     else if (t.type === 'EXPENSE') b[t.accountId] = (b[t.accountId] || 0) - t.amount;
+    else if (t.type === 'ADJUST') b[t.accountId] = (b[t.accountId] || 0) + (t.dir || 1) * t.amount;
     else if (t.type === 'TRANSFER') {
       b[t.accountId] = (b[t.accountId] || 0) - t.amount;
       if (t.toAccountId != null) b[t.toAccountId] = (b[t.toAccountId] || 0) + (t.toAmount ?? t.amount);
@@ -436,14 +437,38 @@ function txRow(t) {
   let icon = c ? c.icon : '📦', title = t.merchant || (c ? lbl(c.name) : 'بدون تصنيف'), cls = 'exp', sign = '-';
   if (t.type === 'INCOME') { cls = 'inc'; sign = '+'; }
   if (t.type === 'TRANSFER') { icon = ic('transfer'); cls = ''; sign = ''; title = t.merchant || `تحويل إلى ${lbl((acc(t.toAccountId) || {}).name || '')}`; }
+  if (t.type === 'ADJUST') { icon = '⚖️'; cls = ''; sign = t.dir < 0 ? '-' : '+'; title = 'تسوية رصيد'; }
   return `<div class="item" data-tx="${t.id}">
     <div class="ico">${icon}</div>
     <div class="grow"><div class="ellipsis">${esc(title)}</div><div class="muted ellipsis">${t.source === 'ESTIMATE' ? '<span class="pill">تقديري</span> ' : ''}${esc(lbl(a ? a.name : ''))} · ${ltr(fmtDT(t.date))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
     <div class="num ${cls}">${sign}${money(t.amount)} <small class="muted">${cur}</small></div>
   </div>`;
 }
+// تعديل رصيد حساب يدوي من الرئيسية: الفرق بيتسجل «تسوية» (مش دخل ولا مصروف) أو مصروف ماتسجلش
+function openBalanceEdit(a) {
+  const cur = balances()[a.id] || 0;
+  sheet(`رصيد ${lbl(a.name)}`, `
+    <div class="row between"><span class="muted">الرصيد في البرنامج</span><b class="num">${money(cur)} ${a.currency}</b></div>
+    <label class="f">الرصيد الحقيقي دلوقتي</label><input class="in num" id="beV" inputmode="decimal" value="${Math.round(cur * 100) / 100}" style="font-size:24px;text-align:center">
+    <div id="beDiff" class="muted" style="text-align:center;margin-top:6px"></div>
+    <div class="btns" style="margin-top:12px"><button class="btn primary" id="beAdj">⚖️ تسوية الرصيد</button><button class="btn" id="beExp">📦 الفرق مصروف ماسجلتهوش</button></div>
+    <p class="muted">«تسوية» بتظبط الرصيد من غير ما تأثر على تقارير الدخل والمصروف. ولو الفرق ده صرف نسيت تسجّله، اختار التاني.</p>
+    <button class="btn block" id="beTx" style="margin-top:8px">${ic('list')} حركات ${esc(lbl(a.name))}</button>`, () => {
+    const val = () => parseAmount($('#beV').value);
+    const upd = () => { const v = val(); const d = v == null ? 0 : v - cur; $('#beDiff').textContent = v == null ? '' : d ? `الفرق ${d > 0 ? '+' : '-'}${money(Math.abs(d))}` : 'مفيش فرق'; $('#beExp').disabled = !(d < 0); };
+    $('#beV').oninput = upd; upd(); setTimeout(() => { $('#beV').focus(); $('#beV').select(); }, 150);
+    const done = id => { save(); closeSheet(); toast('اتظبط الرصيد ✓'); lastVoiceIds = [id]; };
+    $('#beAdj').onclick = () => { const v = val(); if (v == null) return toast('اكتب الرصيد'); const d = v - cur; if (!d) return closeSheet();
+      const id = newId(); db.txns.push({ id, type: 'ADJUST', amount: Math.abs(d), dir: d > 0 ? 1 : -1, accountId: a.id, note: 'تعديل يدوي', date: Date.now(), source: 'ADJUST' }); done(id); };
+    $('#beExp').onclick = () => { const v = val(); const d = v - cur; if (!(d < 0)) return;
+      const id = newId(); db.txns.push({ id, type: 'EXPENSE', amount: -d, accountId: a.id, categoryId: (catByName('cat_other_exp') || {}).id || null, merchant: 'فرق رصيد', note: 'تعديل يدوي', date: Date.now(), source: 'ADJUST' }); done(id); };
+    $('#beTx').onclick = () => { closeSheetQuiet(); filter = { q: '', type: '', accountId: a.id, categoryId: 0, period: 'ALL' }; setTab('txns'); };
+  });
+}
 function bindTxRows(root) {
-  root.querySelectorAll('[data-tx]').forEach(el => el.onclick = () => openTxn(db.txns.find(t => t.id === +el.dataset.tx)));
+  root.querySelectorAll('[data-tx]').forEach(el => el.onclick = () => { const t = db.txns.find(x => x.id === +el.dataset.tx); if (!t) return;
+    if (t.type === 'ADJUST') { if (confirm('تلغي تسوية الرصيد دي؟')) { db.txns = db.txns.filter(x => x.id !== t.id); save(); render(); toast('اتلغت التسوية'); } return; }
+    openTxn(t); });
 }
 
 const insH = (i, h, w) => `<div class="insight ${w ? 'w' : ''}"><span class="ib">${ic(i)}</span><div class="grow">${h}</div></div>`;
@@ -554,7 +579,7 @@ function renderHome() {
   view().querySelectorAll('[data-acc]').forEach(b => b.onclick = () => {
     const a = acc(+b.dataset.acc);
     if (a.type === 'CREDIT') return setTab('cards');
-    filter = { q: '', type: '', accountId: a.id, categoryId: 0, period: 'ALL' }; setTab('txns');
+    openBalanceEdit(a);
   });
   bindTxRows(view());
 }
