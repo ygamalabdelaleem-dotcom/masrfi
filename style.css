@@ -657,3 +657,19 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .bg-r { padding: 12px; border-top: 1px solid var(--line); cursor: pointer; }
 .bg-r:first-child { border-top: 0; }
 .bg-sub { font-size: 12.5px; margin-top: 5px; }
+/* ضبط الميزانية */
+.bg-rate { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.bg-rate b { color: var(--text, inherit); }
+.bg-rate .in.sm { width: 92px; }
+.bg-fx { gap: 6px; padding: 6px 8px; }
+.bg-fx .in.grow { flex: 1; min-width: 0; height: 32px; padding: 4px 8px; font-size: 13px; }
+.bg-fx .bg-fc { width: 54px; padding: 4px; }
+.bg-fx .in.sm.num { width: 80px; }
+.bg-fx .sk-x { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 0; background: var(--exp); color: #fff; font-size: 12px; display: grid; place-items: center; padding: 0; }
+.bg-eq { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; margin: 14px 0; padding: 12px 8px; border-radius: 14px; background: var(--bg); text-align: center; }
+.bg-eq > div { display: flex; flex-direction: column; min-width: 64px; }
+.bg-eq small { color: var(--muted); font-size: 11px; }
+.bg-eq b { font-size: 14px; }
+.bg-eq i { font-style: normal; font-weight: 800; color: var(--muted); }
+.bg-eq .tot { flex-basis: 100%; margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--line, rgba(127,127,127,.3)); }
+.bg-eq .tot b { font-size: 20px; color: var(--inc); }

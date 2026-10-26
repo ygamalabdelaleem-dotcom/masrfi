@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '63';
+const APP_VERSION = '64';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -711,48 +711,88 @@ function budgetStatus() {
   const f = pc ? pc.last : mf, t = pc ? pc.next - 1 : mt; const daysLeft = pc ? pc.left : Math.max(1, Math.round((mt - dayStart(Date.now())) / DAY) + 1);
   const spent = catTotals(inRange(f, t), 'EXPENSE');
   const rows = db.categories.filter(c => !c.isIncome && c.monthlyBudget > 0).map(c => { const sp = spent[c.id] || 0; const left = c.monthlyBudget - sp;
-    return { c, b: c.monthlyBudget, s: sp, left, daily: Math.max(0, left) / daysLeft, fixed: c.name === 'cat_installments' || c.name === 'cat_rent' || db.recurring.some(r => r.active && r.categoryId === c.id && r.type === 'EXPENSE') }; });
+    return { c, b: c.monthlyBudget, s: sp, left, daily: Math.max(0, left) / daysLeft, fixed: c.name === 'cat_installments' || c.name === 'cat_rent' || ((db.prefs.monthFixed || {})[monthKey()] || []).some(l => l.c === c.id) || db.recurring.some(r => r.active && r.categoryId === c.id && r.type === 'EXPENSE') }; });
   const S = hasProfile() ? prof().salary || 0 : avgMonthly('INCOME'); const rate = db.prefs.savingRate || 20;
   const totB = rows.reduce((a, r) => a + r.b, 0), totS = rows.reduce((a, r) => a + r.s, 0);
   const varRows = rows.filter(r => !r.fixed); const varLeft = varRows.reduce((a, r) => a + Math.max(0, r.left), 0);
   return { f, t, daysLeft, rows, S, rate, save: S * rate / 100, totB, totS, dailyCap: varLeft / daysLeft, varLeft, unbudgeted: Object.keys(spent).filter(k => !rows.some(r => r.c.id === +k)).reduce((a, k) => a + spent[k], 0) };
 }
-// «ضبطلي الدنيا»: المرتب − الادخار − الثابت والأقساط = المتاح، ويتوزع على التصنيفات حسب صرفك آخر 3 شهور
+// «ضبط الميزانية»: المرتب − الادخار − الثابت والأقساط = المتاح للصرف، والمتاح بس هو اللي بيتوزع على التصنيفات
+// الثابت والأقساط بتتكتب لكل شهر لوحده (prefs.monthFixed[YYYY-MM]) لأنها بتختلف من شهر للتاني
 const DEF_WEIGHTS = { cat_food: 35, cat_transport: 15, cat_bills: 8, cat_telecom: 4, cat_health: 6, cat_clothes: 7, cat_fun: 8, cat_shopping: 5, cat_family: 6, cat_gifts: 3, cat_edu: 3 };
-function suggestBudgets(rate) {
+const monthKey = (ts = Date.now()) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+// القايمة الافتراضية: الأقساط الجاية + المصاريف المتكررة
+function defaultFixedLines() {
+  const L = []; const ic = catByName('cat_installments');
+  db.installments.forEach(p => { const n = nextInstallment(p); if (n && n.payment) L.push({ n: p.name || 'قسط', a: Math.round(n.payment), c: ic ? ic.id : null }); });
+  db.recurring.filter(r => r.active && r.type === 'EXPENSE').forEach(r => L.push({ n: r.merchant || r.note || lbl((cat(r.categoryId) || {}).name || 'مصروف ثابت'), a: Math.round(conv(r.amount, recCur(r)) * (MONTH_FACTOR[r.period] || 1)), c: r.categoryId || null }));
+  return L;
+}
+const monthFixedLines = () => { const m = (db.prefs.monthFixed || {})[monthKey()]; return m ? m.map(x => ({ ...x })) : defaultFixedLines(); };
+function suggestBudgets(rate, lines) {
   const S = hasProfile() ? prof().salary || 0 : avgMonthly('INCOME'); if (!(S > 0)) return null;
-  const save = S * rate / 100; const out = {};
-  const inst = db.installments.reduce((a, p0) => { const n = nextInstallment(p0); return a + (n ? n.payment : 0); }, 0);
-  const ic = catByName('cat_installments'); if (ic && inst) out[ic.id] = Math.round(inst);
-  db.recurring.filter(r => r.active && r.type === 'EXPENSE' && r.categoryId).forEach(r => { out[r.categoryId] = (out[r.categoryId] || 0) + conv(r.amount, recCur(r)) * (MONTH_FACTOR[r.period] || 1); });
-  const fixed = Object.values(out).reduce((a, v) => a + v, 0); const avail = Math.max(0, S - save - fixed);
+  lines = lines || monthFixedLines();
+  const save = S * rate / 100; const fx = {};
+  const oc = catByName('cat_other_exp');
+  lines.forEach(l => { const k = l.c || (oc && oc.id); if (k && l.a > 0) fx[k] = (fx[k] || 0) + l.a; });
+  const fixed = lines.reduce((a, l) => a + (l.a > 0 ? l.a : 0), 0); const avail = Math.max(0, S - save - fixed);
   const hist = {}; for (let o = -3; o <= -1; o++) { const [a, b] = monthRange(o); const m = catTotals(inRange(a, b), 'EXPENSE'); for (const k in m) hist[k] = (hist[k] || 0) + m[k]; }
   const cur = catTotals(inRange(...monthRange(0)), 'EXPENSE'); for (const k in cur) hist[k] = (hist[k] || 0) + cur[k] * 0.5;
-  const varCats = db.categories.filter(c => !c.isIncome && out[c.id] == null && c.name !== 'cat_other_exp');
+  const varCats = db.categories.filter(c => !c.isIncome && fx[c.id] == null && c.name !== 'cat_other_exp' && c.name !== 'cat_installments');
   // نص الوزن من صرفك الفعلي ونص من توزيع مصري معقول، عشان شهر واحد غريب مايبوظش الموازنة
   const th = varCats.reduce((a, c) => a + (hist[c.id] || 0), 0), td = varCats.reduce((a, c) => a + (DEF_WEIGHTS[c.name] || 0), 0);
   let w = varCats.map(c => [c, (th ? (hist[c.id] || 0) / th : 0) * (th ? 0.5 : 0) + (td ? (DEF_WEIGHTS[c.name] || 0) / td : 0) * (th ? 0.5 : 1)]);
   w = w.filter(x => x[1] > 0.004); const tw = w.reduce((a, x) => a + x[1], 0);
   const nice = v => v < 100 ? Math.round(v / 10) * 10 : Math.round(v / 50) * 50;
-  w.forEach(([c, x]) => out[c.id] = nice(avail * x / tw));
-  for (const k in out) out[k] = Math.round(out[k]);
-  return { S, save, fixed, avail, out };
+  const out = {}; w.forEach(([c, x]) => out[c.id] = nice(avail * x / tw));
+  for (const k in fx) fx[k] = Math.round(fx[k]);
+  return { S, save, fixed, avail, fx, out };
 }
 function openBudgetSetup() {
-  let rate = db.prefs.savingRate || 20; let sug = suggestBudgets(rate);
-  const draw = () => { sug = suggestBudgets(rate);
-    if (!sug) return sheet('ضبط الموازنة', '<div class="empty">سجّل مرتبك الأول من الإعدادات ← بياناتي المالية</div><button class="btn primary block" id="bgProf">سجّل المرتب</button>', () => $('#bgProf').onclick = () => openOnboarding(true));
-    sheet('⚙️ ضبطلي الموازنة', `
-      <label class="f">سياسة الادخار (من المرتب)</label>
-      <div class="chips">${[10, 15, 20, 25, 30, 40].map(v => `<button class="chip ${rate === v ? 'on' : ''}" data-rt="${v}">${v}%</button>`).join('')}</div>
-      <div class="mm-sum" style="margin-top:10px"><div><small>المرتب</small><span class="num">${money(sug.S)}</span></div><div><small>ادخار ${rate}%</small><span class="num mm-a">${money(sug.save)}</span></div><div><small>ثابت وأقساط</small><span class="num mm-l">${money(sug.fixed)}</span></div></div>
-      <div class="insight"><div class="grow">المتاح للصرف <b class="num">${money(sug.avail)}</b>، متوزع على التصنيفات حسب صرفك. عدّل أي رقم قبل ما تحفظ.</div></div>
-      <div class="list">${Object.entries(sug.out).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="item"><div class="ico">${cat(+k).icon}</div><div class="grow">${esc(lbl(cat(+k).name))}</div><input class="in sm num" data-bv="${k}" inputmode="decimal" value="${v}"></div>`).join('')}</div>
-      <div class="btns"><button class="btn primary" id="bgSave">حفظ الموازنة</button></div>`, () => {
-      document.querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rate = +b.dataset.rt; draw(); });
-      $('#bgSave').onclick = () => { db.prefs.savingRate = rate; db.categories.forEach(c => { if (!c.isIncome) c.monthlyBudget = 0; });
+  let rate = db.prefs.savingRate || 20; const lines = monthFixedLines(); const ov = {};
+  const expCats = db.categories.filter(c => !c.isIncome);
+  const keepScroll = fn => { const sc = document.querySelector('.sheet-card'); const y = sc ? sc.scrollTop : 0; fn(); if (sc) sc.scrollTop = y; };
+  const draw = () => { const sug = suggestBudgets(rate, lines);
+    if (!sug) return sheet('ضبط الميزانية', '<div class="empty">سجّل مرتبك الأول من الإعدادات ← بياناتي المالية</div><button class="btn primary block" id="bgProf">سجّل المرتب</button>', () => $('#bgProf').onclick = () => openOnboarding(true));
+    const mName = new Date().toLocaleDateString('ar-EG', { month: 'long' });
+    const varTot = Object.keys(sug.out).reduce((a, k) => a + (ov[k] != null ? ov[k] : sug.out[k]), 0);
+    sheet('⚙️ ضبط الميزانية', `
+      <label class="f">١) سياسة الادخار (من المرتب)</label>
+      <div class="chips">${[10, 15, 20, 25, 30, 40].map(v => `<button class="chip ${rate === v ? 'on' : ''}" data-rt="${v}">${v}%</button>`).join('')}
+</div>
+      <div class="bg-rate"><span>أو اكتب النسبة اللي انت عايزها</span><input class="in sm num" id="bgRate" inputmode="decimal" placeholder="مثلاً 12" value="${[10, 15, 20, 25, 30, 40].includes(rate) ? '' : rate}"><b>%</b></div>
+      <label class="f" style="margin-top:12px">٢) الثابت والأقساط بتوع شهر ${mName}</label>
+      <p class="muted" style="margin:2px 0 6px">دول بيتخصموا من المرتب الأول ومش بيتقسموا على البنود. عدّل أو زوّد أو امسح حسب الشهر ده.</p>
+      <div class="list" id="bgFix">${lines.map((l, i) => `<div class="item bg-fx"><select class="in sm bg-fc" data-fc="${i}">${expCats.map(c => `<option value="${c.id}" ${l.c === c.id ? 'selected' : ''}>${c.icon}</option>`).join('')}</select><input class="in grow" dir="auto" data-fn="${i}" value="${esc(l.n)}" placeholder="اسم المصروف"><input class="in sm num" data-fa="${i}" inputmode="decimal" value="${l.a || ''}" placeholder="المبلغ"><button class="sk-x" data-fd="${i}" aria-label="مسح">✕</button></div>`).join('') || '<div class="empty">مفيش ثابت أو أقساط الشهر ده</div>'}</div>
+      <button class="btn block" id="bgAdd" style="margin-top:6px">＋ إضافة مصروف ثابت</button>
+      <div class="bg-eq">
+        <div><small>المرتب</small><b class="num">${money(sug.S)}</b></div><i>−</i>
+        <div><small>ادخار ${rate}%</small><b class="num mm-a">${money(sug.save)}</b></div><i>−</i>
+        <div><small>ثابت وأقساط</small><b class="num mm-l">${money(sug.fixed)}</b></div><i>=</i>
+        <div class="tot"><small>المتاح للصرف</small><b class="num">${money(sug.avail)}</b></div>
+      </div>
+      <label class="f">٣) المتاح بيتوزع على البنود دي (حسب صرفك)</label>
+      ${Math.abs(varTot - sug.avail) >= 100 ? `<p class="muted" style="margin:2px 0 6px">مجموع البنود ${money(varTot)} ${varTot > sug.avail ? `أكتر من المتاح بـ ${money(varTot - sug.avail)}` : `وفاضل ${money(sug.avail - varTot)} من غير توزيع`}</p>` : ''}
+      <div class="list">${Object.entries(sug.out).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="item"><div class="ico">${cat(+k).icon}</div><div class="grow">${esc(lbl(cat(+k).name))}</div><input class="in sm num" data-bv="${k}" inputmode="decimal" value="${ov[k] != null ? ov[k] : v}"></div>`).join('')}</div>
+      <div class="btns"><button class="btn primary" id="bgSave">حفظ الميزانية</button></div>`, () => {
+      const re = () => keepScroll(draw);
+      document.querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rate = +b.dataset.rt; re(); });
+      $('#bgRate').onchange = e => { const v = parseAmount(e.target.value); if (v >= 0 && v < 100) { rate = v; re(); } };
+      document.querySelectorAll('[data-fn]').forEach(el => el.oninput = () => { lines[+el.dataset.fn].n = el.value; });
+      document.querySelectorAll('[data-fa]').forEach(el => el.onchange = () => { lines[+el.dataset.fa].a = parseAmount(el.value) || 0; re(); });
+      document.querySelectorAll('[data-fc]').forEach(el => el.onchange = () => { lines[+el.dataset.fc].c = +el.value; re(); });
+      document.querySelectorAll('[data-fd]').forEach(el => el.onclick = () => { lines.splice(+el.dataset.fd, 1); re(); });
+      $('#bgAdd').onclick = () => { lines.push({ n: '', a: 0, c: (catByName('cat_bills') || expCats[0]).id }); re(); const ins = document.querySelectorAll('[data-fn]'); if (ins.length) ins[ins.length - 1].focus(); };
+      document.querySelectorAll('[data-bv]').forEach(el => el.onchange = () => { ov[el.dataset.bv] = parseAmount(el.value) || 0; re(); });
+      $('#bgSave').onclick = () => { const s2 = suggestBudgets(rate, lines);
+        db.prefs.savingRate = rate; db.prefs.monthFixed = db.prefs.monthFixed || {};
+        db.prefs.monthFixed[monthKey()] = lines.filter(l => l.a > 0).map(l => ({ n: (l.n || '').trim() || lbl((cat(l.c) || {}).name || 'مصروف ثابت'), a: l.a, c: l.c }));
+        // نشيل الشهور القديمة ونسيب آخر 12
+        Object.keys(db.prefs.monthFixed).sort().slice(0, -12).forEach(k => delete db.prefs.monthFixed[k]);
+        db.categories.forEach(c => { if (!c.isIncome) c.monthlyBudget = 0; });
+        for (const k in s2.fx) { const c = cat(+k); if (c) c.monthlyBudget = s2.fx[k]; }
         document.querySelectorAll('[data-bv]').forEach(el => { const c = cat(+el.dataset.bv); if (c) c.monthlyBudget = parseAmount(el.value) || 0; });
-        save(); closeSheet(); stv.tab = 'budget'; if (tab === 'stats') renderStats(); toast('اتظبطت الموازنة ✓'); };
+        save(); closeSheet(); stv.tab = 'budget'; if (tab === 'stats') renderStats(); toast('اتظبطت الميزانية ✓'); };
     }); };
   draw();
 }
@@ -761,12 +801,12 @@ function budgetReply(t) {
   if (!/(فاضل|باقي|متبقي|اصرف كام|اقدر اصرف|حدي|الحد اليومي|ميزاني|موازن)/.test(t) || /\d/.test(t)) return null;
   const bs = budgetStatus(); if (!bs.rows.length) return null;
   const c = catOfWords(t, false); const r = c && bs.rows.find(x => x.c.id === c);
-  if (r) return { reply: `ميزانية ${lbl(r.c.name)} ${r0(r.b)}، صرفت ${r0(r.s)}، ${r.left >= 0 ? `فاضلك ${r0(r.left)}، يعني حدك ${r0(r.daily)} في اليوم لحد ${hasProfile() ? 'القبض' : 'آخر الشهر'} (${bs.daysLeft} يوم)` : `وعدّيتها بـ ${r0(-r.left)}`}.`, go: () => { stv.tab = 'budget'; setTab('stats'); }, goLabel: 'الموازنة' };
+  if (r) return { reply: `ميزانية ${lbl(r.c.name)} ${r0(r.b)}، صرفت ${r0(r.s)}، ${r.left >= 0 ? `فاضلك ${r0(r.left)}، يعني حدك ${r0(r.daily)} في اليوم لحد ${hasProfile() ? 'القبض' : 'آخر الشهر'} (${bs.daysLeft} يوم)` : `وعدّيتها بـ ${r0(-r.left)}`}.`, go: () => { stv.tab = 'budget'; setTab('stats'); }, goLabel: 'الميزانية' };
   if (c && !r) return null;
   if (/(يوم علي|يوم على|ايام|القبض|المرتب|قسط|البطاقه|الكارت|الفيزا|دين|ديون|الشهر اللي فات|رصيد)/.test(t)) return null;
   if (/(النهارده|اليوم|يومي|في اليوم|اصرف كام|فاضل|باقي|متبقي|ميزاني|موازن)/.test(t)) {
     const over = bs.rows.filter(x => x.left < 0);
-    return { reply: `حدك الأقصى النهارده ${r0(bs.dailyCap)} للمصاريف المتغيرة، وفاضل منها ${r0(bs.varLeft)} على ${bs.daysLeft} يوم.${over.length ? ` عدّيت ميزانية ${over.map(x => lbl(x.c.name)).join(' و')}.` : ''}`, go: () => { stv.tab = 'budget'; setTab('stats'); }, goLabel: 'الموازنة' };
+    return { reply: `حدك الأقصى النهارده ${r0(bs.dailyCap)} للمصاريف المتغيرة، وفاضل منها ${r0(bs.varLeft)} على ${bs.daysLeft} يوم.${over.length ? ` عدّيت ميزانية ${over.map(x => lbl(x.c.name)).join(' و')}.` : ''}`, go: () => { stv.tab = 'budget'; setTab('stats'); }, goLabel: 'الميزانية' };
   }
   return null;
 }
@@ -814,17 +854,17 @@ function renderStats() {
   } else if (stv.tab === 'budget') {
     const bs = budgetStatus(); const pct = (x, y) => y ? Math.min(100, x / y * 100) : 0; const cls = p => p >= 100 ? 'over' : p >= 80 ? 'warn' : 'good';
     body = bs.rows.length ? `<div class="card bg-top">
-        <div class="row between"><b>الموازنة لحد ${hasProfile() ? 'القبض' : 'آخر الشهر'}</b><span class="muted">باقي ${bs.daysLeft} يوم</span></div>
-        <div class="mm-sum" style="margin:10px 0 8px"><div><small>الموازنة</small><span class="num">${money(bs.totB)}</span></div><div><small>صرفت</small><span class="num mm-l">${money(bs.totS)}</span></div><div><small>فاضل</small><span class="num ${bs.totB - bs.totS < 0 ? 'mm-l' : 'mm-a'}">${money(bs.totB - bs.totS)}</span></div></div>
+        <div class="row between"><b>الميزانية لحد ${hasProfile() ? 'القبض' : 'آخر الشهر'}</b><span class="muted">باقي ${bs.daysLeft} يوم</span></div>
+        <div class="mm-sum" style="margin:10px 0 8px"><div><small>الميزانية</small><span class="num">${money(bs.totB)}</span></div><div><small>صرفت</small><span class="num mm-l">${money(bs.totS)}</span></div><div><small>فاضل</small><span class="num ${bs.totB - bs.totS < 0 ? 'mm-l' : 'mm-a'}">${money(bs.totB - bs.totS)}</span></div></div>
         <div class="bar ${cls(pct(bs.totS, bs.totB))}"><i style="width:${pct(bs.totS, bs.totB)}%"></i></div>
         <div class="bg-cap"><span>🎯 حدك الأقصى النهارده</span><b class="num">${money(bs.dailyCap)}</b></div>
-        <div class="muted">ادخار ${bs.rate}% = ${money(bs.save)} من المرتب${bs.unbudgeted > 0 ? ` · صرف برا الموازنة ${money(bs.unbudgeted)}` : ''}</div></div>
+        <div class="muted">ادخار ${bs.rate}% = ${money(bs.save)} من المرتب${bs.unbudgeted > 0 ? ` · صرف برا الميزانية ${money(bs.unbudgeted)}` : ''}</div></div>
       <div class="mm-list">${bs.rows.sort((x, y) => y.b - x.b).map(r => `<div class="bg-r" data-bgc="${r.c.id}">
         <div class="row between"><span>${r.c.icon} ${esc(lbl(r.c.name))}${r.fixed ? ' <small class="muted">ثابت</small>' : ''}</span><span class="num ${r.left < 0 ? 'mm-l' : ''}">${r.left < 0 ? 'عدّيت ' + money(-r.left) : 'فاضل ' + money(r.left)}</span></div>
         <div class="bar ${cls(pct(r.s, r.b))}"><i style="width:${pct(r.s, r.b)}%"></i></div>
         <div class="row between muted bg-sub"><span>صرفت ${money(r.s)} من ${money(r.b)}</span>${r.fixed ? '' : `<span>حد يومي <b class="num">${money(r.daily)}</b></span>`}</div></div>`).join('')}</div>
-      <button class="btn block" id="stBud" style="margin-top:10px">⚙️ ضبطلي الموازنة تاني</button>`
-      : `<div class="empty">مفيش موازنة لسه. خليني أظبطهالك من مرتبك ونسبة الادخار.</div><button class="btn primary block" id="stBud">⚙️ ضبطلي الدنيا</button>`;
+      <button class="btn block" id="stBud" style="margin-top:10px">⚙️ ضبط الميزانية</button>`
+      : `<div class="empty">مفيش ميزانية لسه. خليني أظبطهالك من مرتبك ونسبة الادخار.</div><button class="btn primary block" id="stBud">⚙️ ضبط الميزانية</button>`;
   } else {
     const g = {}; list.filter(x => x.type === stv.type).forEach(x => { const k = (x.merchant || '').trim() || '(من غير وصف)'; g[k] = g[k] || { n: 0, v: 0 }; g[k].n++; g[k].v += conv(x.amount, txCur(x)); });
     const ks = Object.keys(g).sort((a, b) => g[b].v - g[a].v);
