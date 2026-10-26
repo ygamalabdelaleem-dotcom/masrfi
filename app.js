@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '64';
+const APP_VERSION = '65';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -729,16 +729,16 @@ function defaultFixedLines() {
   return L;
 }
 const monthFixedLines = () => { const m = (db.prefs.monthFixed || {})[monthKey()]; return m ? m.map(x => ({ ...x })) : defaultFixedLines(); };
-function suggestBudgets(rate, lines) {
+function suggestBudgets(rate, lines, excl) {
   const S = hasProfile() ? prof().salary || 0 : avgMonthly('INCOME'); if (!(S > 0)) return null;
-  lines = lines || monthFixedLines();
+  lines = lines || monthFixedLines(); excl = excl || new Set(db.prefs.budgetExcl || []);
   const save = S * rate / 100; const fx = {};
   const oc = catByName('cat_other_exp');
   lines.forEach(l => { const k = l.c || (oc && oc.id); if (k && l.a > 0) fx[k] = (fx[k] || 0) + l.a; });
   const fixed = lines.reduce((a, l) => a + (l.a > 0 ? l.a : 0), 0); const avail = Math.max(0, S - save - fixed);
   const hist = {}; for (let o = -3; o <= -1; o++) { const [a, b] = monthRange(o); const m = catTotals(inRange(a, b), 'EXPENSE'); for (const k in m) hist[k] = (hist[k] || 0) + m[k]; }
   const cur = catTotals(inRange(...monthRange(0)), 'EXPENSE'); for (const k in cur) hist[k] = (hist[k] || 0) + cur[k] * 0.5;
-  const varCats = db.categories.filter(c => !c.isIncome && fx[c.id] == null && c.name !== 'cat_other_exp' && c.name !== 'cat_installments');
+  const varCats = db.categories.filter(c => !c.isIncome && fx[c.id] == null && !excl.has(c.id) && c.name !== 'cat_other_exp' && c.name !== 'cat_installments');
   // نص الوزن من صرفك الفعلي ونص من توزيع مصري معقول، عشان شهر واحد غريب مايبوظش الموازنة
   const th = varCats.reduce((a, c) => a + (hist[c.id] || 0), 0), td = varCats.reduce((a, c) => a + (DEF_WEIGHTS[c.name] || 0), 0);
   let w = varCats.map(c => [c, (th ? (hist[c.id] || 0) / th : 0) * (th ? 0.5 : 0) + (td ? (DEF_WEIGHTS[c.name] || 0) / td : 0) * (th ? 0.5 : 1)]);
@@ -750,9 +750,12 @@ function suggestBudgets(rate, lines) {
 }
 function openBudgetSetup() {
   let rate = db.prefs.savingRate || 20; const lines = monthFixedLines(); const ov = {};
+  // البنود اللي اتمسحت بتتشال من التوزيع، واللي اتضافت بإيدك بتتحط بمبلغك
+  const excl = new Set(db.prefs.budgetExcl || []); const extra = (db.prefs.budgetExtra || []).filter(id => cat(id) && !excl.has(id)); extra.forEach(id => { if (cat(id).monthlyBudget > 0) ov[id] = cat(id).monthlyBudget; });
   const expCats = db.categories.filter(c => !c.isIncome);
   const keepScroll = fn => { const sc = document.querySelector('.sheet-card'); const y = sc ? sc.scrollTop : 0; fn(); if (sc) sc.scrollTop = y; };
-  const draw = () => { const sug = suggestBudgets(rate, lines);
+  const draw = () => { const sug = suggestBudgets(rate, lines, excl);
+    if (sug) { extra.forEach(id => { if (sug.out[id] == null && sug.fx[id] == null) sug.out[id] = 0; }); }
     if (!sug) return sheet('ضبط الميزانية', '<div class="empty">سجّل مرتبك الأول من الإعدادات ← بياناتي المالية</div><button class="btn primary block" id="bgProf">سجّل المرتب</button>', () => $('#bgProf').onclick = () => openOnboarding(true));
     const mName = new Date().toLocaleDateString('ar-EG', { month: 'long' });
     const varTot = Object.keys(sug.out).reduce((a, k) => a + (ov[k] != null ? ov[k] : sug.out[k]), 0);
@@ -772,8 +775,10 @@ function openBudgetSetup() {
         <div class="tot"><small>المتاح للصرف</small><b class="num">${money(sug.avail)}</b></div>
       </div>
       <label class="f">٣) المتاح بيتوزع على البنود دي (حسب صرفك)</label>
-      ${Math.abs(varTot - sug.avail) >= 100 ? `<p class="muted" style="margin:2px 0 6px">مجموع البنود ${money(varTot)} ${varTot > sug.avail ? `أكتر من المتاح بـ ${money(varTot - sug.avail)}` : `وفاضل ${money(sug.avail - varTot)} من غير توزيع`}</p>` : ''}
-      <div class="list">${Object.entries(sug.out).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="item"><div class="ico">${cat(+k).icon}</div><div class="grow">${esc(lbl(cat(+k).name))}</div><input class="in sm num" data-bv="${k}" inputmode="decimal" value="${ov[k] != null ? ov[k] : v}"></div>`).join('')}</div>
+      <div class="bg-tot ${varTot - sug.avail > 50 ? 'over' : ''}">مجموع البنود <b class="num">${money(varTot)}</b> من المتاح <b class="num">${money(sug.avail)}</b><br><small>${Math.abs(varTot - sug.avail) < 50 ? 'متوزع كله ✓' : varTot > sug.avail ? `زيادة عن المتاح بـ ${money(varTot - sug.avail)}، قلّل بند` : `فاضل ${money(sug.avail - varTot)} من غير توزيع`}</small></div>
+      <div class="list">${Object.entries(sug.out).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="item bg-fx"><div class="ico">${cat(+k).icon}</div><div class="grow">${esc(lbl(cat(+k).name))}</div><input class="in sm num" data-bv="${k}" inputmode="decimal" value="${ov[k] != null ? ov[k] : v}"><button class="sk-x" data-bx="${k}" aria-label="مسح">✕</button></div>`).join('')}</div>
+      <select class="in" id="bgAddV" style="margin-top:6px"><option value="">＋ إضافة بند…</option>${expCats.filter(c => sug.out[c.id] == null && sug.fx[c.id] == null && c.name !== 'cat_installments').map(c => `<option value="${c.id}">${c.icon} ${esc(lbl(c.name))}</option>`).join('')}<option value="new">✏️ بند جديد باسم من عندك</option></select>
+      <div class="bg-tot ${varTot - sug.avail > 50 ? 'over' : ''}">مجموع البنود <b class="num">${money(varTot)}</b> من المتاح <b class="num">${money(sug.avail)}</b><br><small>${Math.abs(varTot - sug.avail) < 50 ? 'متوزع كله ✓' : varTot > sug.avail ? `زيادة عن المتاح بـ ${money(varTot - sug.avail)}، قلّل بند` : `فاضل ${money(sug.avail - varTot)} من غير توزيع`}</small></div>
       <div class="btns"><button class="btn primary" id="bgSave">حفظ الميزانية</button></div>`, () => {
       const re = () => keepScroll(draw);
       document.querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rate = +b.dataset.rt; re(); });
@@ -784,8 +789,14 @@ function openBudgetSetup() {
       document.querySelectorAll('[data-fd]').forEach(el => el.onclick = () => { lines.splice(+el.dataset.fd, 1); re(); });
       $('#bgAdd').onclick = () => { lines.push({ n: '', a: 0, c: (catByName('cat_bills') || expCats[0]).id }); re(); const ins = document.querySelectorAll('[data-fn]'); if (ins.length) ins[ins.length - 1].focus(); };
       document.querySelectorAll('[data-bv]').forEach(el => el.onchange = () => { ov[el.dataset.bv] = parseAmount(el.value) || 0; re(); });
-      $('#bgSave').onclick = () => { const s2 = suggestBudgets(rate, lines);
-        db.prefs.savingRate = rate; db.prefs.monthFixed = db.prefs.monthFixed || {};
+      document.querySelectorAll('[data-bx]').forEach(el => el.onclick = () => { const id = +el.dataset.bx; excl.add(id); delete ov[id]; const i = extra.indexOf(id); if (i >= 0) extra.splice(i, 1); re(); });
+      $('#bgAddV').onchange = e => { let id = e.target.value; if (!id) return;
+        if (id === 'new') { const nm = (prompt('اسم البند الجديد') || '').trim(); if (!nm) return re();
+          let c = db.categories.find(x => !x.isIncome && nrm(lbl(x.name)) === nrm(nm)); if (!c) { c = { id: newId(), name: nm, isIncome: false, icon: '📦', monthlyBudget: 0 }; db.categories.push(c); expCats.push(c); } id = c.id; }
+        id = +id; excl.delete(id); if (!extra.includes(id)) extra.push(id); re();
+        const inp = document.querySelector(`[data-bv="${id}"]`); if (inp) { inp.focus(); inp.select(); } };
+      $('#bgSave').onclick = () => { const s2 = suggestBudgets(rate, lines, excl);
+        db.prefs.savingRate = rate; db.prefs.budgetExcl = [...excl]; db.prefs.budgetExtra = extra.slice(); db.prefs.monthFixed = db.prefs.monthFixed || {};
         db.prefs.monthFixed[monthKey()] = lines.filter(l => l.a > 0).map(l => ({ n: (l.n || '').trim() || lbl((cat(l.c) || {}).name || 'مصروف ثابت'), a: l.a, c: l.c }));
         // نشيل الشهور القديمة ونسيب آخر 12
         Object.keys(db.prefs.monthFixed).sort().slice(0, -12).forEach(k => delete db.prefs.monthFixed[k]);

@@ -673,3 +673,7 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .bg-eq i { font-style: normal; font-weight: 800; color: var(--muted); }
 .bg-eq .tot { flex-basis: 100%; margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--line, rgba(127,127,127,.3)); }
 .bg-eq .tot b { font-size: 20px; color: var(--inc); }
+.bg-tot { margin: 4px 0 8px; padding: 8px 12px; border-radius: 12px; background: var(--bg); font-size: 13px; text-align: center; }
+.bg-tot small { color: var(--muted); }
+.bg-tot.over { background: color-mix(in srgb, var(--exp) 12%, transparent); }
+.bg-tot.over small { color: var(--exp); font-weight: 700; }
