@@ -393,3 +393,58 @@ svg.i.inl { display: inline-block; width: 16px; height: 16px; vertical-align: -3
 .chat-voice .muted { font-size: 13px; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 16px #e5393522; } }
 body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat { filter: blur(18px); }
+
+/* ================= أشكال التطبيق (skins) ================= */
+/* حديث (الافتراضي): أخضر زمردي هادي، كروت أنعم، مسافات أوسع */
+:root[data-skin="fresh"] {
+  --bg: #f4f6f5; --card: #ffffff; --text: #10201a; --muted: #6a7b74; --line: #e6ebe8; --chip: #eef3f0;
+  --primary: #0e8a62; --primary-2: #13a876; --primary-soft: #e3f4ec; --band-1: #06392b; --band-2: #0b7a57;
+  --inc: #0e9f6e; --exp: #e0483e; --warn: #e08a00; --radius: 20px;
+  --shadow: 0 1px 2px rgba(16, 32, 26, .04), 0 8px 24px rgba(16, 32, 26, .06);
+}
+/* بنفسجي: ستايل تطبيقات الفينتك */
+:root[data-skin="violet"] {
+  --bg: #f5f4fb; --card: #ffffff; --text: #17142b; --muted: #716d8a; --line: #e9e7f3; --chip: #f0eef9;
+  --primary: #5b3df5; --primary-2: #7c5cff; --primary-soft: #ece8ff; --band-1: #2a1680; --band-2: #6a4cf6;
+  --inc: #12a36f; --exp: #e5484d; --warn: #e08a00; --radius: 20px;
+  --shadow: 0 1px 2px rgba(23, 20, 43, .04), 0 8px 24px rgba(42, 22, 128, .07);
+}
+/* أسود وذهبي: داكن دايماً */
+:root[data-skin="gold"] {
+  --bg: #0c0c0e; --card: #17171b; --text: #f3efe6; --muted: #9a9486; --line: #26252b; --chip: #212026;
+  --primary: #d6a83e; --primary-2: #e8c06a; --primary-soft: #2b2416; --band-1: #000000; --band-2: #2a2414;
+  --inc: #4fcf8e; --exp: #ff6b5e; --warn: #ffb74d; --radius: 20px; --shadow: none; color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-skin="fresh"]:not([data-theme="light"]) { --bg: #0a1311; --card: #121d1a; --text: #ecf4f0; --muted: #8aa199; --line: #1d2b27; --chip: #1a2723;
+    --primary: #2fcb92; --primary-2: #5fdcae; --primary-soft: #133328; --band-1: #04140f; --band-2: #0a3a2b; --shadow: none; color-scheme: dark; }
+  :root[data-skin="violet"]:not([data-theme="light"]) { --bg: #0d0b18; --card: #17142a; --text: #efedf8; --muted: #9a95b8; --line: #252140; --chip: #1f1b36;
+    --primary: #9b85ff; --primary-2: #b8a8ff; --primary-soft: #2a2254; --band-1: #0d0826; --band-2: #2d1d7a; --shadow: none; color-scheme: dark; }
+}
+:root[data-skin="fresh"][data-theme="dark"] { --bg: #0a1311; --card: #121d1a; --text: #ecf4f0; --muted: #8aa199; --line: #1d2b27; --chip: #1a2723;
+  --primary: #2fcb92; --primary-2: #5fdcae; --primary-soft: #133328; --band-1: #04140f; --band-2: #0a3a2b; --shadow: none; color-scheme: dark; }
+:root[data-skin="violet"][data-theme="dark"] { --bg: #0d0b18; --card: #17142a; --text: #efedf8; --muted: #9a95b8; --line: #252140; --chip: #1f1b36;
+  --primary: #9b85ff; --primary-2: #b8a8ff; --primary-soft: #2a2254; --band-1: #0d0826; --band-2: #2d1d7a; --shadow: none; color-scheme: dark; }
+
+/* لمسات مشتركة للأشكال الجديدة */
+:root[data-skin]:not([data-skin="classic"]) .band { background: radial-gradient(120% 90% at 100% 0%, var(--band-2) 0%, var(--band-1) 70%); border-radius: 0 0 30px 30px; padding-bottom: 22px; }
+:root[data-skin]:not([data-skin="classic"]) .top { background: var(--band-1); }
+:root[data-skin]:not([data-skin="classic"]) .card { border: 1px solid var(--line); }
+:root[data-skin]:not([data-skin="classic"]) .big { font-size: 36px; letter-spacing: -.5px; }
+:root[data-skin]:not([data-skin="classic"]) .acc-card { border-radius: 20px; background: rgba(255,255,255,.08); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+:root[data-skin]:not([data-skin="classic"]) .ti { border-radius: 16px; }
+:root[data-skin]:not([data-skin="classic"]) .btn, :root[data-skin]:not([data-skin="classic"]) input.in, :root[data-skin]:not([data-skin="classic"]) select.in { border-radius: 14px; }
+:root[data-skin]:not([data-skin="classic"]) .tabs { background: color-mix(in srgb, var(--card) 86%, transparent); backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px); }
+:root[data-skin]:not([data-skin="classic"]) .tabs button.on::before { width: 5px; height: 5px; border-radius: 50%; top: auto; bottom: 2px; }
+:root[data-skin]:not([data-skin="classic"]) .section-title { font-size: 14px; color: var(--text); font-weight: 700; margin: 20px 4px 10px; }
+:root[data-skin]:not([data-skin="classic"]) .sheet-card { border-radius: 26px 26px 0 0; }
+:root[data-skin]:not([data-skin="classic"]) .ccard { background: linear-gradient(135deg, var(--band-1) 0%, var(--band-2) 100%); }
+:root[data-skin="gold"] .band, :root[data-skin="gold"] .hero, :root[data-skin="gold"] .ccard, :root[data-skin="gold"] .chat-top { color: #f3efe6; }
+:root[data-skin="gold"] .btn.primary, :root[data-skin="gold"] .chip.on, :root[data-skin="gold"] .c-mic, :root[data-skin="gold"] .tabs button.add span, :root[data-skin="gold"] .msg.me .bub, :root[data-skin="gold"] .c-send { color: #1a1408; }
+:root[data-skin="gold"] .acc-card { border-color: rgba(214,168,62,.25); }
+
+/* اختيار الشكل */
+.skins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.skins button { border: 2px solid var(--line); background: var(--card); border-radius: 16px; padding: 8px 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.skins button.on { border-color: var(--primary); }
+.skins i { width: 100%; height: 44px; border-radius: 10px; display: block; }
