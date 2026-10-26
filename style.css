@@ -427,18 +427,18 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
   --primary: #9b85ff; --primary-2: #b8a8ff; --primary-soft: #2a2254; --band-1: #0d0826; --band-2: #2d1d7a; --shadow: none; color-scheme: dark; }
 
 /* لمسات مشتركة للأشكال الجديدة */
-:root[data-skin]:not([data-skin="classic"]) .band { background: radial-gradient(120% 90% at 100% 0%, var(--band-2) 0%, var(--band-1) 70%); border-radius: 0 0 30px 30px; padding-bottom: 22px; }
-:root[data-skin]:not([data-skin="classic"]) .top { background: var(--band-1); }
-:root[data-skin]:not([data-skin="classic"]) .card { border: 1px solid var(--line); }
-:root[data-skin]:not([data-skin="classic"]) .big { font-size: 36px; letter-spacing: -.5px; }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .band { background: radial-gradient(120% 90% at 100% 0%, var(--band-2) 0%, var(--band-1) 70%); border-radius: 0 0 30px 30px; padding-bottom: 22px; }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .top { background: var(--band-1); }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .card { border: 1px solid var(--line); }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .big { font-size: 36px; letter-spacing: -.5px; }
 :root[data-skin="fresh"] .acc-card, :root[data-skin="violet"] .acc-card, :root[data-skin="gold"] .acc-card { border-radius: 20px; background: rgba(255,255,255,.08); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-:root[data-skin]:not([data-skin="classic"]) .ti { border-radius: 16px; }
-:root[data-skin]:not([data-skin="classic"]) .btn, :root[data-skin]:not([data-skin="classic"]) input.in, :root[data-skin]:not([data-skin="classic"]) select.in { border-radius: 14px; }
-:root[data-skin]:not([data-skin="classic"]) .tabs { background: color-mix(in srgb, var(--card) 86%, transparent); backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px); }
-:root[data-skin]:not([data-skin="classic"]) .tabs button.on::before { width: 5px; height: 5px; border-radius: 50%; top: auto; bottom: 2px; }
-:root[data-skin]:not([data-skin="classic"]) .section-title { font-size: 14px; color: var(--text); font-weight: 700; margin: 20px 4px 10px; }
-:root[data-skin]:not([data-skin="classic"]) .sheet-card { border-radius: 26px 26px 0 0; }
-:root[data-skin]:not([data-skin="classic"]) .ccard { background: linear-gradient(135deg, var(--band-1) 0%, var(--band-2) 100%); }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .ti { border-radius: 16px; }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .btn, :root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) input.in, :root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) select.in { border-radius: 14px; }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .tabs { background: color-mix(in srgb, var(--card) 86%, transparent); backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px); }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .tabs button.on::before { width: 5px; height: 5px; border-radius: 50%; top: auto; bottom: 2px; }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .section-title { font-size: 14px; color: var(--text); font-weight: 700; margin: 20px 4px 10px; }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .sheet-card { border-radius: 26px 26px 0 0; }
+:root[data-skin]:not([data-skin="classic"]):not([data-skin="teal"]) .ccard { background: linear-gradient(135deg, var(--band-1) 0%, var(--band-2) 100%); }
 :root[data-skin="gold"] .band, :root[data-skin="gold"] .hero, :root[data-skin="gold"] .ccard, :root[data-skin="gold"] .chat-top { color: #f3efe6; }
 :root[data-skin="gold"] .btn.primary, :root[data-skin="gold"] .chip.on, :root[data-skin="gold"] .c-mic, :root[data-skin="gold"] .tabs button.add span, :root[data-skin="gold"] .msg.me .bub, :root[data-skin="gold"] .c-send { color: #1a1408; }
 :root[data-skin="gold"] .acc-card { border-color: rgba(214,168,62,.25); }
@@ -484,3 +484,39 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 :root[data-skin="wallet"] .ccard { background: linear-gradient(135deg, #2c2c2e, #48484a 55%, #1c1c1e); box-shadow: 0 10px 24px rgba(0,0,0,.3); }
 :root[data-skin="wallet"] .hero { background: linear-gradient(135deg, #1c1c1e, #3a3a3c); }
 :root[data-skin="wallet"] .tabs button.add span { background: var(--primary); }
+
+/* «محفظتي ب»: نفس روح البرنامج التاني. خط Cairo، أخضر تيل، كروت بحدود خفيفة، والهيدر جوه كارت مش شريط عريض */
+:root[data-skin="teal"] {
+  --bg: #f1f5f9; --card: #ffffff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0; --chip: #f8fafc;
+  --primary: #0f766e; --primary-2: #0d9488; --primary-soft: #ccfbf1; --band-1: #0f766e; --band-2: #115e59;
+  --inc: #059669; --exp: #dc2626; --warn: #d97706; --radius: 16px;
+  --shadow: 0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-skin="teal"]:not([data-theme="light"]) { --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8; --line: #334155; --chip: #273449;
+    --primary: #2dd4bf; --primary-2: #14b8a6; --primary-soft: #134e4a; --band-1: #115e59; --band-2: #134e4a; --inc: #4ade80; --exp: #f87171; --warn: #fbbf24; --shadow: none; color-scheme: dark; }
+}
+:root[data-skin="teal"][data-theme="dark"] { --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8; --line: #334155; --chip: #273449;
+  --primary: #2dd4bf; --primary-2: #14b8a6; --primary-soft: #134e4a; --band-1: #115e59; --band-2: #134e4a; --inc: #4ade80; --exp: #f87171; --warn: #fbbf24; --shadow: none; color-scheme: dark; }
+:root[data-skin="teal"] body { font-family: "Cairo", "IBM Plex Sans Arabic", -apple-system, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+:root[data-skin="teal"] .top { background: var(--bg); color: var(--text); border-bottom: 1px solid var(--line); }
+:root[data-skin="teal"] .top h1 { font-weight: 800; font-size: 22px; color: var(--primary); }
+:root[data-skin="teal"] .top .icon-btn, :root[data-skin="teal"] .top .back { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+:root[data-skin="teal"] .band { margin: 12px 0 12px; border-radius: 18px; padding: 14px 16px 16px; background: linear-gradient(135deg, var(--band-1), var(--band-2)); box-shadow: 0 10px 25px -5px rgba(15,23,42,.15); }
+:root[data-skin="teal"] .big { font-size: 30px; font-weight: 800; letter-spacing: 0; }
+:root[data-skin="teal"] .acc-scroll { margin: 14px -16px 0; }
+:root[data-skin="teal"] .acc-card { border-radius: 14px; background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.2); }
+:root[data-skin="teal"] .pos-row > div { background: rgba(255,255,255,.13); border-radius: 10px; }
+:root[data-skin="teal"] .card { border: 1px solid var(--line); }
+:root[data-skin="teal"] .tiles { background: none; box-shadow: none; border: 0; padding: 0; gap: 8px; margin-bottom: 12px; }
+:root[data-skin="teal"] .tiles button { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 2px 8px; box-shadow: 0 1px 2px rgba(15,23,42,.04); gap: 5px; }
+:root[data-skin="teal"] .ti { width: 36px; height: 36px; border-radius: 50%; }
+:root[data-skin="teal"] .ti svg.i { width: 19px; height: 19px; }
+:root[data-skin="teal"] .section-title { color: var(--text); font-size: 14px; font-weight: 700; }
+:root[data-skin="teal"] .btn { border: 1px solid var(--line); min-height: 44px; }
+:root[data-skin="teal"] .btn.primary { border-color: var(--primary); }
+:root[data-skin="teal"] .tabs { background: var(--card); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-skin="teal"] .tabs button.on::before { width: 26px; height: 3px; border-radius: 0 0 3px 3px; top: 0; bottom: auto; }
+:root[data-skin="teal"] .ccard { background: linear-gradient(135deg, #0f766e, #115e59); }
+:root[data-skin="teal"] .hero { background: linear-gradient(135deg, #0f766e, #115e59); }
+:root[data-skin="teal"] .chat-top { background: linear-gradient(135deg, #0f766e, #115e59); }

@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '55';
+const APP_VERSION = '56';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -111,6 +111,22 @@ try { db = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch (e) { db = s
 db = migrate(db);
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast('تعذّر الحفظ: ' + e.message); }
+  autoBackup();
+}
+// نسخة احتياطية تلقائية جوه الموبايل: نسخة كل يوم، بنحتفظ بآخر 7 أيام (من غير المفاتيح السرية)
+const AUTO_BK = 'mywallet.autobk';
+const autoBks = () => { try { return JSON.parse(localStorage.getItem(AUTO_BK) || '[]'); } catch (e) { return []; } };
+function autoBackup(force) {
+  try {
+    const list = autoBks(); const today = new Date().toISOString().slice(0, 10);
+    if (!force && list[0] && list[0].day === today) return;
+    if (!db.txns || db.txns.length < 1) return;
+    const clean = { ...db, prefs: { ...db.prefs } }; ['gmKey', 'azKey', 'azRegion', 'pinHash', 'bioCred'].forEach(k => delete clean.prefs[k]); delete clean.chat;
+    const rest = list.filter(x => x.day !== today);
+    for (let n = Math.min(6, rest.length); n >= 0; n--) {
+      try { localStorage.setItem(AUTO_BK, JSON.stringify([{ day: today, ts: Date.now(), n: db.txns.length, data: JSON.stringify(clean) }, ...rest.slice(0, n)])); return; } catch (e) { }
+    }
+  } catch (e) { }
 }
 const newId = () => ++db.nextId;
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
@@ -437,7 +453,7 @@ function txRow(t) {
   let icon = c ? c.icon : '📦', title = t.merchant || (c ? lbl(c.name) : 'بدون تصنيف'), cls = 'exp', sign = '-';
   if (t.type === 'INCOME') { cls = 'inc'; sign = '+'; }
   if (t.type === 'TRANSFER') { icon = ic('transfer'); cls = ''; sign = ''; title = t.merchant || `تحويل إلى ${lbl((acc(t.toAccountId) || {}).name || '')}`; }
-  if (t.type === 'ADJUST') { icon = '⚖️'; cls = ''; sign = t.dir < 0 ? '-' : '+'; title = 'تسوية رصيد'; }
+  if (t.type === 'ADJUST') { icon = '⚖️'; cls = ''; sign = t.dir < 0 ? '-' : '+'; title = t.merchant || 'تسوية رصيد'; if (t.merchant) icon = '🤝'; }
   return `<div class="item" data-tx="${t.id}">
     <div class="ico">${icon}</div>
     <div class="grow"><div class="ellipsis">${esc(title)}</div><div class="muted ellipsis">${t.source === 'ESTIMATE' ? '<span class="pill">تقديري</span> ' : ''}${esc(lbl(a ? a.name : ''))} · ${ltr(fmtDT(t.date))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
@@ -525,7 +541,7 @@ function renderHome() {
     ['ctrl', 'shield', 'المتحكم المالي'], ['cards', 'card', 'البطاقات'], ['savings', 'coins', 'الادخار'], ['voice', 'mic', 'مساعد صوتي']];
   view().innerHTML = `
     <section class="band">
-      <div class="greet">${greet}</div>
+      <div class="greet">${greet} · ${new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}${(() => { try { return ' · ' + new Date().toLocaleDateString('ar-SA-u-ca-islamic-umalqura', { day: 'numeric', month: 'long' }); } catch (e) { return ''; } })()}</div>
       <div class="bal-row">
         <div><div class="label">الرصيد الحالي</div><div class="big num">${m(total)} <small>${base()}</small></div></div>
         <div class="row" style="gap:8px"><button class="eye" id="hMic" aria-label="المساعد الصوتي">${ic('mic')}</button><button class="eye" id="hEye" aria-label="إظهار أو إخفاء الرصيد">${ic(hide ? 'eyeOff' : 'eye')}</button></div>
@@ -1289,7 +1305,7 @@ function openSettings() {
     <div class="seg" id="stTheme">${[['auto', 'تلقائي'], ['light', '☀️ فاتح'], ['dark', '🌙 داكن']].map(([k, v]) => `<button data-th="${k}" class="${(db.prefs.theme || 'auto') === k ? 'on' : ''}">${v}</button>`).join('')}</div>
     <p class="muted">«تلقائي» بيمشي مع وضع الآيفون نفسه.</p>
     <label class="f">شكل التطبيق</label>
-    <div class="skins" id="stSkin">${SKINS.map(([k, n, g]) => `<button data-sk="${k}" class="${(db.prefs.skin || 'wallet') === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>`).join('')}</div>
+    <div class="skins" id="stSkin">${SKINS.map(([k, n, g]) => `<button data-sk="${k}" class="${(db.prefs.skin || 'teal') === k ? 'on' : ''}"><i style="background:${g}"></i>${n}</button>`).join('')}</div>
     <h3 style="margin-top:16px">بياناتي المالية</h3>
     <div class="list menu"><div class="item" id="stProf"><div class="ico">💼</div><div class="grow">المرتب ويوم القبض وساعات الشغل</div><span class="muted">${hasProfile() ? money(prof().salary) + ' · يوم ' + prof().payday : 'غير محدد'} ‹</span></div></div>
     <h3 style="margin-top:16px">الإشعارات</h3>
@@ -2018,10 +2034,11 @@ async function checkNotifs() {
 function openNotifs() {
   const log = db.notifLog || [];
   sheet('الإشعارات', `
-    ${log.length ? `<div class="list">${log.map(x => `<div class="item ${x.read ? '' : 'unread'}" data-ngo="${x.go}"><div class="grow"><b>${esc(x.title)}</b><div class="muted">${esc(x.body)}</div><div class="muted" style="font-size:11.5px">${ltr(new Date(x.date).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}</div></div></div>`).join('')}</div>` : '<div class="empty">مفيش إشعارات لسه.</div>'}
+    ${log.length ? `<div class="list">${log.map(x => `<div class="item ${x.read ? '' : 'unread'}" data-ngo="${x.go}"><div class="grow"><b>${esc(x.title)}</b><div class="muted">${esc(x.body)}</div><div class="muted" style="font-size:11.5px">${ltr(new Date(x.date).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}</div></div><button class="x" data-ndel="${x.id}" aria-label="مسح">✕</button></div>`).join('')}</div>` : '<div class="empty">مفيش إشعارات لسه.</div>'}
     <div class="btns"><button class="btn" id="nSet">⚙️ إعدادات الإشعارات</button>${log.length ? '<button class="btn" id="nClr">مسح الكل</button>' : ''}</div>`, () => {
     log.forEach(x => x.read = true); save(); nBadge();
     document.querySelectorAll('[data-ngo]').forEach(el => el.onclick = () => { const g = el.dataset.ngo; if (g) { closeSheetQuiet(); setTab(g); } });
+    document.querySelectorAll('[data-ndel]').forEach(el => el.onclick = e => { e.stopPropagation(); db.notifLog = db.notifLog.filter(x => x.id !== +el.dataset.ndel); save(); nBadge(); openNotifs(); });
     $('#nSet').onclick = openNotifSettings;
     if ($('#nClr')) $('#nClr').onclick = () => { db.notifLog = []; save(); openNotifs(); };
   });
@@ -2781,13 +2798,106 @@ function accOfWords(t) {
   if (/(من البنك|الحساب البنكي|تحويل بنكي)/.test(t)) { const c = live.find(a => a.type === 'BANK'); if (c) return c.id; }
   return null;
 }
+// تواريخ بالكلام: «قبل 3 أيام»، «من يومين»، «يوم الخميس»، «15 مارس»، «يوم 12». بترجع التاريخ والنص من غيرها
+const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'ابريل', 'مايو', 'يونيو', 'يوليو', 'اغسطس', 'سبتمبر', 'اكتوبر', 'نوفمبر', 'ديسمبر'];
+const AR_WDAYS = [['الحد', 'الاحد'], ['الاتنين', 'الاثنين', 'التنين'], ['التلات', 'الثلاثاء', 'التلاتاء'], ['الاربع', 'الاربعاء', 'الاربعا'], ['الخميس'], ['الجمعه'], ['السبت']];
+function voiceDate(t) {
+  const t0 = dayStart(Date.now()); let date = null; const at = d => d + (Date.now() - t0);
+  let m = /(?:قبل|من)\s+(\d+)\s+(?:يوم|ايام)/.exec(t);
+  if (m) { date = at(t0 - +m[1] * DAY); t = t.replace(m[0], ' '); }
+  else if ((m = /(?:قبل|من)\s+(يومين|اسبوع|جمعه)(?=\s|$)/.exec(t))) { date = at(t0 - (m[1] === 'يومين' ? 2 : 7) * DAY); t = t.replace(m[0], ' '); }
+  if (!date) { const wi = AR_WDAYS.findIndex(ws => ws.some(w => new RegExp('(^|\\s)(يوم\\s+)?' + w + '(?=\\s|$)').test(t)));
+    if (wi >= 0) { const back = (new Date().getDay() - wi + 7) % 7; date = at(t0 - back * DAY); t = t.replace(new RegExp('(يوم\\s+)?(' + AR_WDAYS[wi].join('|') + ')(?=\\s|$)'), ' '); } }
+  if (!date && (m = new RegExp('(\\d{1,2})\\s+(' + AR_MONTHS.join('|') + '|شهر\\s+\\d{1,2})(?=\\s|$)').exec(t))) {
+    const mo = AR_MONTHS.indexOf(m[2]) >= 0 ? AR_MONTHS.indexOf(m[2]) : +m[2].replace(/\D/g, '') - 1; const y = new Date().getFullYear();
+    let d = new Date(y, mo, +m[1], new Date().getHours(), new Date().getMinutes()).getTime(); if (d > Date.now() + DAY) d = new Date(y - 1, mo, +m[1]).getTime();
+    date = d; t = t.replace(m[0], ' ');
+  }
+  if (!date && (m = /(^|\s)يوم\s+(\d{1,2})(?=\s|$)/.exec(t)) && +m[2] >= 1 && +m[2] <= 31) {
+    const n = new Date(); let d = new Date(n.getFullYear(), n.getMonth(), +m[2], n.getHours(), n.getMinutes()); if (d.getTime() > Date.now() + DAY) d.setMonth(d.getMonth() - 1);
+    date = d.getTime(); t = t.replace(m[0], ' ');
+  }
+  return { date, t: t.replace(/\s+/g, ' ').trim() };
+}
+const dateWord = ts => { const d = Math.round((dayStart(Date.now()) - dayStart(ts)) / DAY); return d <= 0 ? '' : d === 1 ? ' (امبارح)' : d === 2 ? ' (أول امبارح)' : ` (${new Date(ts).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })})`; };
+// العملات الأجنبية بالكلام: «50 دولار» بتتحول لجنيه بسعر النهارده
+const FX_WORDS = { دولار: 'USD', دولارات: 'USD', يورو: 'EUR', ريال: 'SAR', ريالات: 'SAR', درهم: 'AED', دراهم: 'AED', استرليني: 'GBP', باوند: 'GBP', دينار: 'KWD' };
+// «3 ك» = 3000، «ربع مليون»، «نص مليون»
+const bigWords = t => t.replace(/(^|\s)ربع مليون(?=\s|$)/g, '$1 250000').replace(/(^|\s)نص مليون(?=\s|$)/g, '$1 500000').replace(/(^|\s)مليون ونص(?=\s|$)/g, '$1 1500000');
+const kWords = t => t.replace(/(\d+(?:\.\d+)?)\s*(?:ك|k)(?=\s|$)/g, (_, n) => String(+n * 1000));
+// الكلام اللي مش مصروف: تحويل، سحب من ATM، سلف وديون، مسح آخر حركة
+function voiceActions(raw) {
+  let t = nrm(normDigits(raw)).replace(/[؟?!.،,]/g, ' ').replace(/\s+/g, ' ').trim();
+  t = kWords(wordsToDigits(bigWords(t)).replace(/(\d)([^\d\s.,])/g, '$1 $2').replace(/([^\d\s.,])(\d)/g, '$1 $2'));
+  const vd = voiceDate(t); t = vd.t; const date = vd.date || Date.now();
+  const amt = parseFloat((t.match(/\d+(\.\d+)?/) || [])[0]);
+  const live = db.accounts.filter(a => !a.archived);
+  const named = (s, ex) => { let best = null; live.forEach(a => { const n = nrm(lbl(a.name)); if (n.length > 1 && a.id !== ex && new RegExp('(^|\\s|ل|لل|ال|من|في|علي|علي ال)' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\s|$)').test(s) && (!best || n.length > nrm(lbl(best.name)).length)) best = a; });
+    if (best) return best;
+    if (/(كاش|نقدي|الكاش|جيبي)/.test(s)) return live.find(a => a.type === 'CASH' && a.id !== ex);
+    if (/(البنك|بنك|الحساب)/.test(s)) return live.find(a => a.type === 'BANK' && a.id !== ex);
+    if (/(المحفظه|محفظه|فودافون كاش|انستاباي)/.test(s)) return live.find(a => a.type === 'WALLET' && a.id !== ex);
+    if (/(الكارت|الفيزا|البطاقه|الكريدت)/.test(s)) return live.find(a => a.type === 'CREDIT' && a.id !== ex);
+    return null; };
+  const cashAcc = () => live.find(a => a.type === 'CASH') || live.find(a => LIQUID.has(a.type));
+  const push = x => { const id = newId(); db.txns.push({ id, date, source: 'VOICE', note: 'بالصوت', ...x }); return id; };
+  const done = (reply, ids) => { save(); render(); lastVoiceIds = [].concat(ids); return { reply: reply + dateWord(date), undoId: ids }; };
+  // مسح آخر حركة
+  if (/(^|\s)(احذف|امسح|شيل|الغي|الغاء|كنسل)\s+(اخر|آخر)\s*(حركه|مصروف|عمليه|حاجه|واحده)?/.test(t) && !(amt > 0)) {
+    const last = db.txns.filter(x => lastVoiceIds.includes(x.id)).pop() || [...db.txns].sort((a, b) => b.id - a.id)[0];
+    if (!last) return { reply: 'مفيش حركات أمسحها' };
+    db.txns = db.txns.filter(x => x.id !== last.id); save(); render(); lastVoiceIds = [];
+    return { reply: `مسحت آخر حركة: ${r0(last.amount)} ${last.merchant || lbl((cat(last.categoryId) || {}).name || '')}`.trim() };
+  }
+  if (!(amt > 0)) return null;
+  // تحويل بين حساباتي: «حولت ألف من الأهلي للكاش»
+  if (/(^|\s)(حولت|حولنا|نقلت|حوشت في|دخلت)(\s|$)/.test(t) && live.length > 1) {
+    const fm = /(?:^|\s)من\s+(.+?)(?=\s(?:ل|لل|الي|الى|علي|على|في)\S*|$)/.exec(t); const tm = /(?:^|\s)(?:ل|لل|الي|علي|في)\s*(\S+(?:\s\S+)?)\s*$|(?:^|\s)(ل\S+|لل\S+)(?=\s|$)/.exec(t.replace(/(?:^|\s)من\s+\S+/, ' '));
+    const from = fm ? named(fm[1]) : null; const to = named(tm ? (tm[1] || tm[2] || '') : t.replace(/(?:^|\s)من\s+\S+(\s\S+)?/, ' '), from && from.id);
+    if (to && (from || cashAcc()) && (from || cashAcc()).id !== to.id) { const f = from || live.find(a => LIQUID.has(a.type) && a.id !== to.id);
+      if (f) { const id = push({ type: 'TRANSFER', amount: amt, accountId: f.id, toAccountId: to.id, merchant: '' }); return done(`حوّلت ${r0(amt)} من ${lbl(f.name)} لـ ${lbl(to.name)}`, id); } }
+  }
+  // سداد البطاقة: «سددت الفيزا 3000 من CIB» → تحويل للبطاقة
+  if (/(^|\s)(سددت|دفعت|سدد)\s+(\S+\s+)?(ال)?(بطاقه|كارت|فيزا|كريدت|الكريديت)(\s|$)/.test(t)) {
+    const cards = live.filter(a => a.type === 'CREDIT'); const card = cards.find(a => t.includes(nrm(lbl(a.name)))) || cards[0];
+    const fm = /(?:^|\s)من\s+(.+)$/.exec(t); const from = (fm && named(fm[1], card && card.id)) || live.find(a => a.type === 'BANK') || cashAcc();
+    if (card && from) { const id = push({ type: 'TRANSFER', amount: amt, accountId: from.id, toAccountId: card.id, merchant: 'سداد البطاقة' }); return done(`سجّلت سداد ${r0(amt)} لـ ${lbl(card.name)} من ${lbl(from.name)}`, id); }
+  }
+  // سحب من الماكينة: «سحبت 500» → من البنك للكاش
+  if (/(^|\s)(سحبت|سحبنا)(\s|$)/.test(t)) {
+    const cash = live.find(a => a.type === 'CASH'); const from = named(t.replace(/(كاش|نقدي)/g, ' '), cash && cash.id) || live.find(a => a.type === 'BANK') || live.find(a => a.type === 'WALLET');
+    if (cash && from && from.id !== cash.id) { const id = push({ type: 'TRANSFER', amount: amt, accountId: from.id, toAccountId: cash.id, merchant: 'سحب' }); return done(`سجّلت سحب ${r0(amt)} من ${lbl(from.name)} للكاش`, id); }
+  }
+  // الديون والسلف
+  const person = s => (s || '').split(' ').filter(w => !/^\d/.test(w) && !/^(من|ل|لـ|الي|على|علي|جنيه|ب|فلوس|مبلغ)$/.test(w) && !FX_WORDS[w]).slice(0, 2).join(' ').replace(/^(ل|لـ)(?=\S{2})/, '');
+  const findDebt = (who, lent) => db.debts.filter(d => d.lent === lent && d.paid < d.amount).find(d => { const n = nrm(d.person); return who && (n === who || n.includes(who) || who.includes(n)); });
+  const debtMove = (lent, dir, who, txt) => { const a = named(t) || cashAcc(); let id = null;
+    if (a) id = push({ type: 'ADJUST', amount: amt, dir, accountId: a.id, merchant: txt }); return { a, id }; };
+  let m = /(?:^|\s)(?:سلفت|اسلفت|قرضت|اقرضت|ادنت)\s+(.+)$/.exec(t);
+  if (m) { const who = person(m[1].replace(/\d+(\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim()); if (who) {
+    db.debts.push({ id: newId(), person: who, amount: amt, paid: 0, currency: base(), lent: true, date, dueDate: null, note: 'بالصوت' });
+    const r = debtMove(true, -1, who, `سلفة لـ ${who}`); return done(`سجّلت إنك سلّفت ${who} ${r0(amt)}${r.a ? ` من ${lbl(r.a.name)}` : ''}`, r.id || []); } }
+  m = /(?:^|\s)(?:استلفت|اتسلفت|اقترضت|استدنت)\s+(?:من\s+)?(.+)$/.exec(t);
+  if (m) { const who = person(m[1].replace(/\d+(\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim()); if (who) {
+    db.debts.push({ id: newId(), person: who, amount: amt, paid: 0, currency: base(), lent: false, date, dueDate: null, note: 'بالصوت' });
+    const r = debtMove(false, 1, who, `سلفة من ${who}`); return done(`سجّلت إنك استلفت من ${who} ${r0(amt)}${r.a ? ` في ${lbl(r.a.name)}` : ''}`, r.id || []); } }
+  m = /^(.+?)\s+(?:سدد|سددلي|رجع|رجعلي|رجعلى|دفعلي|ادالي|اداني|رد)(?:\s|$)/.exec(t.replace(/\d+(\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim());
+  if (m) { const d = findDebt(person(m[1]), true); if (d) { const pay = Math.min(amt, d.amount - d.paid); d.paid += pay;
+    const r = debtMove(true, 1, d.person, `${d.person} سدد`); return done(`${d.person} سدد ${r0(pay)}، فاضل عليه ${r0(d.amount - d.paid)}`, r.id || []); } }
+  m = /(?:^|\s)(?:سددت|رجعت|دفعت|اديت)\s+(?:ل|لـ)?\s*(.+)$/.exec(t);
+  if (m) { const w = m[1].replace(/\d+(\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim(); const d = findDebt(person(w.replace(/^ل/, '')), false) || findDebt(person(w), false);
+    if (d) { const pay = Math.min(amt, d.amount - d.paid); d.paid += pay;
+      const r = debtMove(false, -1, d.person, `سداد لـ ${d.person}`); return done(`سددت لـ ${d.person} ${r0(pay)}، فاضل ${r0(d.amount - d.paid)}`, r.id || []); } }
+  return null;
+}
 function parseExpenses(raw) {
   let t = nrm(normDigits(raw)).replace(/(\d),(?=\d{3})/g, '$1').replace(/(\d)\s*(جنيه|جنيهات|ج|ج\.م|le|egp|pound)(?=\s|$)/g, '$1').replace(/[؟?!.]/g, ' ').replace(/\s+/g, ' ').trim();
   t = t.split(' ').map(w => /^(ب|بـ|ل)./.test(w) && isNW(w.replace(/^(بـ|ب|ل)/, '')) ? 'ب ' + w.replace(/^(بـ|ب|ل)/, '') : w).join(' ');
-  t = wordsToDigits(t).replace(/(\d)([^\d\s.,])/g, '$1 $2').replace(/([^\d\s.,])(\d)/g, '$1 $2').replace(/\s+/g, ' ');
+  t = kWords(wordsToDigits(bigWords(t)).replace(/(\d)([^\d\s.,])/g, '$1 $2').replace(/([^\d\s.,])(\d)/g, '$1 $2').replace(/\s+/g, ' '));
   const income = INC_VERB.test(t) && !EXP_VERB.test(t);
   let date = Date.now();
   if (/(اول امبارح|اول امس)/.test(t)) date -= 2 * DAY; else if (/(امبارح|امس)/.test(t)) date -= DAY;
+  else { const vd = voiceDate(t); if (vd.date) { date = vd.date; t = vd.t; } }
   const gAcc = accOfWords(t);
   // تقسيم لأجزاء: كل جزء فيه مبلغ واحد
   const words = t.split(' ').filter(w => !/^(النهارده|انهارده|اليوم|امبارح|اول|امس|جنيه|جنيهات|بس|كمان|وكمان|برده|يعني|تقريبا|حوالي)$/.test(w));
@@ -2808,7 +2918,9 @@ function parseExpenses(raw) {
   if (cur.length) { if (hasNum(cur) || !segs.length) segs.push(cur); else segs[segs.length - 1].push(...cur); }
   return segs.filter(hasNum).map(sw => {
     const st = sw.join(' ');
-    const amount = parseFloat(sw.find(w => /^\d/.test(w)));
+    let amount = parseFloat(sw.find(w => /^\d/.test(w)));
+    const fxw = sw.find(w => FX_WORDS[w]); let fxNote = '';
+    if (fxw) { const code = FX_WORDS[fxw]; fxNote = `${amount} ${fxw}`; if (db.rates[code] > 0 && code !== base()) amount = Math.round(conv(amount, code) * 100) / 100; sw = sw.filter(w => w !== fxw); }
     const words2 = sw.filter(w => !/^\d/.test(w) && !verbWord(w) && !/^(ب|بـ|علي|على|في|من|عند|ل|لل|ال|و)$/.test(w));
     const mm = /(?:^|\s)(?:من|في|عند)\s+(.+)$/.exec(st);
     let categoryId = catOfWords(st, income);
@@ -2817,7 +2929,7 @@ function parseExpenses(raw) {
     if (!merchant) merchant = words2.filter(w => !/^(بال|ال)?(كارت|فيزا|كاش|نقدي|حاجه|حاجات|جنيه)$/.test(w) && !accOfWords(w)).join(' ');
     if (categoryId && merchant && nrm(lbl((cat(categoryId) || {}).name || '')).replace(/^ال/, '') === nrm(merchant).replace(/^ال/, '')) merchant = '';
     if (!categoryId) categoryId = (catByName(income ? 'cat_other_inc' : 'cat_other_exp') || {}).id || null;
-    return { amount, type: income ? 'INCOME' : 'EXPENSE', categoryId, merchant: merchant.slice(0, 40), accountId: accOfWords(st) || gAcc, date };
+    return { amount, type: income ? 'INCOME' : 'EXPENSE', categoryId, merchant: merchant.slice(0, 40), accountId: accOfWords(st) || gAcc, date, fxNote };
   }).filter(x => x.amount > 0);
 }
 let pendingBuy = null;
@@ -2843,6 +2955,7 @@ function handleVoice(text) {
     if (!r.n) return { reply: 'لسه مش عارف يومك العادي، سجّل مصاريفك كام يوم الأول' };
     return { reply: `سجّلت ${Math.round(r.total)} جنيه تقديري لـ ${days.length === 1 ? 'يوم' : days.length + ' أيام'}، وتقدر تعدّلها من الحركات` };
   }
+  const va = voiceActions(t); if (va) return va;
   const dr = dataReply(t); if (dr) return dr;
   const hr = helpReply(t); if (hr) return hr;
   const p = dailyPlan();
@@ -2941,12 +3054,12 @@ function handleVoice(text) {
   if (!def) return { reply: 'أضف حساب الأول' };
   const ids = []; const lines = [];
   items.forEach(q => { const id = newId(); ids.push(id);
-    db.txns.push({ id, type: q.type, amount: q.amount, accountId: q.accountId || def, categoryId: q.categoryId, merchant: q.merchant, note: 'بالصوت', date: q.date, source: 'VOICE' });
+    db.txns.push({ id, type: q.type, amount: q.amount, accountId: q.accountId || def, categoryId: q.categoryId, merchant: q.merchant, note: q.fxNote ? 'بالصوت · ' + q.fxNote : 'بالصوت', date: q.date, source: 'VOICE' });
     if (q.categoryId && q.merchant) learn(q.merchant, q.categoryId);
     const c = cat(q.categoryId); const ac = q.accountId && acc(q.accountId);
     lines.push(`${r0(q.amount)} ${c ? lbl(c.name) : ''}${q.merchant ? ' (' + q.merchant + ')' : ''}${ac && q.accountId !== def ? ' من ' + lbl(ac.name) : ''}`.replace(/\s+/g, ' ').trim()); });
   save(); render(); lastVoiceIds = ids;
-  const when = dayStart(items[0].date) < dayStart(Date.now()) ? (dayStart(items[0].date) < dayStart(Date.now()) - DAY ? ' (أول امبارح)' : ' (امبارح)') : '';
+  const when = dateWord(items[0].date);
   const kind = items[0].type === 'INCOME' ? 'دخل' : 'مصروف';
   if (items.length === 1) return { reply: `سجّلت ${kind} ${lines[0]}${when}`, undoId: ids[0] };
   const tot = items.reduce((s0, q) => s0 + q.amount, 0);
@@ -3157,7 +3270,7 @@ function openTxn(t, preset) {
       <div class="seg">${['DAILY', 'WEEKLY', 'MONTHLY'].map(k => `<button data-fp="${k}" class="${(t.fixPeriod || 'MONTHLY') === k ? 'on' : ''}">${PERIODS[k]}</button>`).join('')}</div>
       <label class="row" style="margin-top:8px"><input type="checkbox" id="tFixAuto" ${t.fixAuto ? 'checked' : ''}> سجّله تلقائياً في معاده</label>
     </div>`) : ''}
-    <div class="btns"><button class="btn primary" id="tSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="tDel">حذف</button>'}</div>`, body => {
+    <div class="btns"><button class="btn primary" id="tSave">حفظ</button>${isNew ? '' : '<button class="btn" id="tDup">⧉ تكرار</button><button class="btn danger" id="tDel">حذف</button>'}</div>`, body => {
     const hrs = () => { const v = parseAmount($('#tAmt').value); const a = acc(+$('#tAcc').value); $('#tHrs').textContent = type === 'EXPENSE' && v ? '⏱️ = ' + workTime(conv(v, a ? a.currency : base())) : ''; };
     $('#tAmt').oninput = hrs; hrs();
     if ($('#tFix')) $('#tFix').onchange = e => $('#tFixOpt').classList.toggle('hidden', !e.target.checked);
@@ -3187,6 +3300,7 @@ function openTxn(t, preset) {
       if (rec.categoryId && rec.merchant) learn(rec.merchant, rec.categoryId);
       save(); closeSheet(); toast('تم الحفظ');
     };
+    if (!isNew) $('#tDup').onclick = () => { readForm(); const c = { ...t, type, id: undefined, date: Date.now(), hash: null, inboxId: null, fixedId: null, source: 'MANUAL' }; closeSheetQuiet(); openTxn(null, c); toast('نسخة جديدة بتاريخ النهارده، عدّل وحفظ'); };
     if (!isNew) $('#tDel').onclick = () => { if (confirm('حذف هذه الحركة؟')) { db.txns = db.txns.filter(x => x.id !== t.id); save(); closeSheet(); } };
     if (isNew && !t.amount) setTimeout(() => { const el = $('#tAmt'); if (el) el.focus(); }, 250);
   });
@@ -3273,7 +3387,7 @@ function editAccount(a, fromCards) {
 
 function openCategories() {
   const sugg = budgetSuggestions();
-  const block = inc => db.categories.filter(c => c.isIncome === inc).map(c => `<div class="item" data-c="${c.id}"><div class="ico">${c.icon}</div><div class="grow">${esc(lbl(c.name))}</div>${c.monthlyBudget > 0 ? `<span class="muted num">${money(c.monthlyBudget)}</span>` : ''}</div>`).join('');
+  const block = inc => db.categories.filter(c => c.isIncome === inc).map(c => `<div class="item" data-c="${c.id}"><div class="ico">${c.icon}</div><div class="grow">${esc(lbl(c.name))}</div>${c.monthlyBudget > 0 ? `<span class="muted num">${money(c.monthlyBudget)}</span>` : ''}<button class="btn small" data-cu="${c.id}" aria-label="لفوق">▲</button><button class="btn small" data-cd="${c.id}" aria-label="لتحت">▼</button></div>`).join('');
   sheet('التصنيفات والميزانيات', `
     ${sugg.length ? `<div class="insight">💡 ميزانيات مقترحة (متوسط آخر 3 أشهر + 10%):<br>${sugg.map(([c, v]) => `${c.icon} ${esc(lbl(c.name))}: <b class="num">${money(v)}</b>`).join('<br>')}
       <div class="btns"><button class="btn small primary" id="cApply">تطبيق الكل</button></div></div>` : ''}
@@ -3281,6 +3395,11 @@ function openCategories() {
     <h3 style="margin-top:12px">الدخل</h3><div class="list">${block(true)}</div>
     <button class="btn primary block" id="cNew" style="margin-top:10px">＋ تصنيف جديد</button>`, () => {
     document.querySelectorAll('[data-c]').forEach(el => el.onclick = () => editCategory(cat(+el.dataset.c)));
+    // ترتيب التصنيفات: بيظهر بنفس الترتيب في إضافة الحركة
+    const mv = (id, d) => { const c = cat(id); const same = db.categories.filter(x => x.isIncome === c.isIncome); const j = same.indexOf(c) + d; if (j < 0 || j >= same.length) return;
+      const a = db.categories.indexOf(c), b = db.categories.indexOf(same[j]); [db.categories[a], db.categories[b]] = [db.categories[b], db.categories[a]]; save(); openCategories(); };
+    document.querySelectorAll('[data-cu]').forEach(el => el.onclick = e => { e.stopPropagation(); mv(+el.dataset.cu, -1); });
+    document.querySelectorAll('[data-cd]').forEach(el => el.onclick = e => { e.stopPropagation(); mv(+el.dataset.cd, 1); });
     $('#cNew').onclick = () => editCategory();
     if ($('#cApply')) $('#cApply').onclick = () => { sugg.forEach(([c, v]) => c.monthlyBudget = v); save(); toast(`تم تطبيق ${sugg.length} ميزانية`); openCategories(); };
   });
@@ -3645,7 +3764,13 @@ async function openSecurity() {
     <label class="row" style="margin-top:8px"><input type="checkbox" id="sBlur" ${db.prefs.blurBg !== false ? 'checked' : ''}> تغبيش الشاشة لما تقلّب بين التطبيقات</label>
     <h3 style="margin-top:16px">تذكير النسخ الاحتياطي</h3>
     <div class="chips">${[[7, 'كل أسبوع'], [14, 'كل أسبوعين'], [30, 'كل شهر'], [0, 'لأ']].map(([v, t]) => `<button class="chip ${(db.prefs.backupEvery ?? 7) === v ? 'on' : ''}" data-be="${v}">${t}</button>`).join('')}</div>
-    <p class="muted">النسخة بتتشفّر بكلمة سر (AES-256)، ومفتاح Gemini ورمز القفل مش بيتحطوا فيها. احفظها في iCloud Drive أو «الملفات».</p>`, () => {
+    <p class="muted">النسخة بتتشفّر بكلمة سر (AES-256)، ومفتاح Gemini ورمز القفل مش بيتحطوا فيها. احفظها في iCloud Drive أو «الملفات».</p>
+    <h3 style="margin-top:16px">نسخ تلقائية على الموبايل</h3>
+    <p class="muted">التطبيق بيعمل نسخة لوحده كل يوم ويحتفظ بآخر 7 أيام. لو حصل غلط تقدر ترجع ليوم قبله. (دي مش بديل عن النسخة المشفّرة في iCloud)</p>
+    <div class="list">${autoBks().map((b, i) => `<div class="item"><div class="ico">🗂️</div><div class="grow"><b>${new Date(b.ts).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</b><div class="muted">${b.n} حركة · ${ltr(new Date(b.ts).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' }))}</div></div><button class="btn small" data-rb="${i}">رجّع</button></div>`).join('') || '<div class="empty">لسه مفيش نسخ</div>'}</div>`, () => {
+    document.querySelectorAll('[data-rb]').forEach(b => b.onclick = () => { const bk = autoBks()[+b.dataset.rb]; if (!bk || !confirm(`ترجع بياناتك لنسخة ${new Date(bk.ts).toLocaleDateString('ar-EG')}؟ أي حاجة اتسجلت بعدها هتتمسح.`)) return;
+      try { const d = JSON.parse(bk.data); const keep = {}; SECRET_PREFS.forEach(k => { if (db.prefs[k]) keep[k] = db.prefs[k]; }); d.prefs = { ...(d.prefs || {}), ...keep }; d.chat = db.chat;
+        localStorage.setItem(KEY, JSON.stringify(d)); toast('اترجعت ✓'); setTimeout(() => location.reload(), 600); } catch (e) { toast('النسخة دي بايظة'); } });
     $('#sPin').onclick = openPin; $('#sBak').onclick = openBackup;
     document.querySelectorAll('[data-la]').forEach(b => b.onclick = () => { db.prefs.lockAfter = +b.dataset.la; save(); openSecurity(); });
     document.querySelectorAll('[data-be]').forEach(b => b.onclick = () => { db.prefs.backupEvery = +b.dataset.be; save(); openSecurity(); });
@@ -3738,9 +3863,9 @@ document.querySelectorAll('.tabs button').forEach(b => { b.querySelector('span')
 // الوضع الفاتح / الداكن: auto يتبع إعداد الآيفون
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => db.prefs.theme === 'dark' || (db.prefs.theme !== 'light' && darkMq.matches);
-const SKINS = [['wallet', 'Wallet', 'linear-gradient(135deg,#0a84ff 0 33%,#ff9f0a 33% 66%,#30d158 66%)'], ['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
+const SKINS = [['teal', 'محفظتي ب', 'linear-gradient(135deg,#0f766e,#115e59)'], ['wallet', 'Wallet', 'linear-gradient(135deg,#0a84ff 0 33%,#ff9f0a 33% 66%,#30d158 66%)'], ['fresh', 'حديث', 'linear-gradient(135deg,#06392b,#0b7a57)'], ['violet', 'بنفسجي', 'linear-gradient(135deg,#2a1680,#6a4cf6)'], ['gold', 'أسود وذهبي', 'linear-gradient(135deg,#000,#2a2414 60%,#d6a83e)'], ['classic', 'كلاسيك', 'linear-gradient(135deg,#062a57,#0b4f9c)']];
 function applyTheme() {
-  const t = db.prefs.theme; document.documentElement.dataset.skin = db.prefs.skin || 'wallet';
+  const t = db.prefs.theme; document.documentElement.dataset.skin = db.prefs.skin || 'teal';
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   $('#themeBtn').innerHTML = ic(isDark() ? 'sun' : 'moon');
   document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.documentElement).getPropertyValue('--band-1').trim() || '#062a57';
