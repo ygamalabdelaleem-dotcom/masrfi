@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '49';
+const APP_VERSION = '50';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -2476,7 +2476,7 @@ function wordsToNumber(t) {
   }
   return found ? total + cur : null;
 }
-const VOICE_SYN = { cat_food: ['اكل', 'أكل', 'اكله', 'مطعم', 'مطاعم', 'طعام', 'غدا', 'غداء', 'عشا', 'عشاء', 'فطار', 'فطور', 'سوبر ماركت', 'سوبرماركت', 'ماركت', 'بقاله', 'طلبات', 'كشري', 'فول', 'طعميه', 'فلافل', 'شاورما', 'بيتزا', 'برجر', 'كريب', 'فراخ', 'لحمه', 'سمك', 'خضار', 'فاكهه', 'عيش', 'خبز', 'لبن', 'جبنه', 'بيض', 'رز', 'سكر', 'زيت', 'حلويات', 'حلو', 'عصير', 'مياه معدنيه', 'تموين', 'كارفور', 'خير زمان', 'اولاد رجب', 'هايبر', 'ماكدونالدز', 'كنتاكي', 'مندي', 'سندوتشات', 'سندوتش'], cat_transport: ['مواصلات', 'بنزين', 'سولار', 'اوبر', 'كريم', 'اندرايفر', 'ديدي', 'تاكسي', 'عربيه', 'العربيه', 'مترو', 'ميكروباص', 'مكروباص', 'اتوبيس', 'توكتوك', 'تكتك', 'قطر', 'قطار', 'جراج', 'ركنه', 'باركنج', 'غسيل العربيه', 'كارته', 'مخالفه', 'صيانه العربيه', 'زيت العربيه', 'كاوتش'],
+const VOICE_SYN = { cat_food: ['اكل', 'أكل', 'اكله', 'مطعم', 'مطاعم', 'طعام', 'غدا', 'غداء', 'عشا', 'عشاء', 'فطار', 'فطور', 'طلبات', 'كشري', 'فول', 'طعميه', 'فلافل', 'شاورما', 'بيتزا', 'برجر', 'كريب', 'حلويات', 'حلو', 'ماكدونالدز', 'كنتاكي', 'مندي', 'سندوتشات', 'سندوتش'], cat_transport: ['مواصلات', 'بنزين', 'سولار', 'اوبر', 'كريم', 'اندرايفر', 'ديدي', 'تاكسي', 'عربيه', 'العربيه', 'مترو', 'ميكروباص', 'مكروباص', 'اتوبيس', 'توكتوك', 'تكتك', 'قطر', 'قطار', 'جراج', 'ركنه', 'باركنج', 'غسيل العربيه', 'كارته', 'مخالفه', 'صيانه العربيه', 'زيت العربيه', 'كاوتش'],
   cat_bills: ['فاتوره', 'فواتير', 'كهربا', 'كهرباء', 'النور', 'مياه', 'الميه', 'غاز', 'نت', 'انترنت', 'راوتر', 'وي', 'صيانه', 'سباك', 'كهربائي', 'نضافه', 'منظفات', 'زباله'], cat_health: ['دكتور', 'دكتوره', 'كشف', 'دوا', 'دواء', 'ادويه', 'علاج', 'صيدليه', 'صحه', 'تحاليل', 'تحليل', 'اشعه', 'مستشفي', 'اسنان', 'نضاره', 'جيم', 'نادي'],
   cat_fun: ['خروج', 'خروجه', 'سينما', 'ترفيه', 'كافيه', 'قهوه', 'شاي', 'نسكافيه', 'ستاربكس', 'سجاير', 'سجائر', 'شيشه', 'بلايستيشن', 'نتفليكس', 'شاهد', 'سبوتيفاي', 'العاب', 'لعب', 'فسحه', 'رحله'], cat_telecom: ['رصيد', 'شحن', 'شحنت', 'كارت شحن', 'موبايل', 'باقه', 'فودافون', 'اورنج', 'اتصالات'], cat_clothes: ['هدوم', 'لبس', 'ملابس', 'جزمه', 'كوتشي', 'تيشيرت', 'قميص', 'بنطلون', 'جاكيت', 'شنطه', 'حلاق', 'حلاقه', 'كوافير'], cat_rent: ['ايجار', 'إيجار'],
   cat_edu: ['دروس', 'درس', 'مدرسه', 'كورس', 'جامعه', 'كتب', 'كتاب', 'كشكول', 'مصاريف الدراسه', 'امتحان'], cat_gifts: ['هديه', 'هدايا', 'نقطه', 'عيديه', 'صدقه', 'زكاه', 'تبرع'], cat_shopping: ['تسوق', 'شوبينج', 'مشتريات', 'امازون', 'نون', 'جوميا', 'اداوات', 'ادوات', 'اجهزه', 'شاحن', 'سماعه'], cat_family: ['البيت', 'مصروف البيت', 'ماما', 'بابا', 'اخويا', 'اختي', 'مراتي', 'العيال', 'الاولاد'], cat_salary: ['مرتب', 'راتب'], cat_bonus: ['مكافأه', 'بونص'] };
@@ -2519,7 +2519,7 @@ function catInText(t) {
 }
 function dataReply(t) {
   if (/(ازاي|كيف|يعني ايه|اشرح|اضيف|اعمل ايه|هعمل ايه)/.test(t) || /(^|\s)لو\s/.test(t)) return null;
-  const isQ = /(كام|قد ايه|اد ايه|(^|\s)كم\s|اجمالي|امتي|امتى|فين|ليه|هل)/.test(t);
+  const isQ = /(^|\s)(كام|بكام|قد ايه|اد ايه|كم|اجمالي|امتي|امتى|فين|ليه|هل|ايه)(\s|$|؟|\?)/.test(t);
   const hasAmt = /\d/.test(t) || wordsToDigits(t) !== t;
   if (/(صرفت|دفعت|اشتريت|جبت|حطيت|شحنت|قبضت|استلمت|جالي|اتحولي)/.test(t) && !isQ && hasAmt) return null;
   // «بنزين 300 بالكارت»: بند + مبلغ من غير سؤال = تسجيل مصروف
@@ -2641,7 +2641,27 @@ async function askAI(question) {
   throw last;
 }
 
+// قاموس مصري: كل حاجة بتتشتري وبندها. «سوبرماركت» بتروح لتصنيف سوبرماركت لو عامله، وإلا طعام.
+const GROCERY = ['مكسرات', 'لب', 'سوداني', 'فول سوداني', 'كاجو', 'لوز', 'بندق', 'فستق', 'شيبسي', 'شيبس', 'بسكويت', 'شيكولاته', 'شوكولاته', 'كاندي', 'بونبون', 'ايس كريم', 'جيلاتي', 'زبادي', 'لبن', 'جبنه', 'جبن', 'بيض', 'زبده', 'سمنه', 'زيت', 'سكر', 'رز', 'ارز', 'مكرونه', 'دقيق', 'عيش', 'خبز', 'فينو', 'توست', 'شاي', 'بن', 'نسكافيه', 'قهوه بودره', 'ملح', 'بهارات', 'عطاره', 'خل', 'صلصه', 'كاتشب', 'مايونيز', 'تونه', 'سردين', 'بلوبيف', 'لانشون', 'بسطرمه', 'سوسيس', 'هوت دوج', 'عسل', 'مربي', 'حلاوه', 'طحينه', 'فول', 'عدس', 'فاصوليا', 'لوبيا', 'حمص', 'خضار', 'خضروات', 'طماطم', 'بطاطس', 'بصل', 'توم', 'خيار', 'جزر', 'كوسه', 'بتنجان', 'فلفل', 'خس', 'ليمون', 'فاكهه', 'فواكه', 'موز', 'تفاح', 'برتقال', 'عنب', 'مانجه', 'بطيخ', 'فراوله', 'جوافه', 'رمان', 'بلح', 'تمر', 'لحمه', 'لحوم', 'فراخ', 'فرخه', 'دجاج', 'سمك', 'جمبري', 'كبده', 'مياه', 'ميه معدنيه', 'كانز', 'بيبسي', 'كوكاكولا', 'سفن', 'عصير', 'منظفات', 'صابون', 'شامبو', 'معجون', 'فرشه', 'مناديل', 'كلينكس', 'تواليت', 'ورق تواليت', 'كلور', 'فلاش', 'بريل', 'اريال', 'برسيل', 'داوني', 'معطر', 'اسفنج', 'سلفانه', 'اكياس', 'حفاضات', 'بامبرز', 'لبن اطفال', 'سوبرماركت', 'سوبر ماركت', 'ماركت', 'بقاله', 'هايبر', 'كارفور', 'سبينيس', 'خير زمان', 'اولاد رجب', 'بيم', 'هايبر وان', 'مترو ماركت', 'كازيون', 'جملة', 'طلبات مارت', 'بريد فاست', 'حلواني', 'فرن'];
+const EXTRA_SYN = {
+  cat_food: ['قصب', 'عصير قصب', 'سوبيا', 'عرقسوس', 'فطار', 'غدا', 'عشا', 'كشري', 'فول وطعميه', 'طعميه', 'شاورما', 'كريب', 'بيتزا', 'برجر', 'فراخ مشويه', 'كباب', 'كفته', 'حواوشي', 'سجق', 'مشويات', 'مطعم', 'كافتيريا', 'سندوتش', 'سندوتشات', 'ساندوتش', 'وجبه', 'دليفري', 'ديليفري', 'طلبات', 'ماكدونالدز', 'كنتاكي', 'هارديز', 'بازوكا', 'مؤمن', 'ابو طارق', 'ابو شقرا', 'جاد', 'التابعي', 'زاكس', 'بيتزا هت', 'دومينوز', 'حلويات', 'كنافه', 'بسبوسه', 'قطايف', 'جاتوه', 'تورته', 'دونتس', 'ايس كريم'],
+  cat_transport: ['توك توك', 'تكتك', 'ميكروباص', 'مشروع', 'سرفيس', 'اتوبيس', 'باص', 'مترو', 'قطر', 'سكه حديد', 'اوبر', 'كريم', 'ديدي', 'اندرايف', 'سويفل', 'تاكسي', 'بنزين', 'سولار', 'غاز طبيعي', 'كارته', 'بوابه', 'ركنه', 'سايس', 'جراج', 'غسيل عربيه', 'مخالفه', 'رخصه', 'ميكانيكي', 'كاوتش', 'زيت موتور', 'تيل', 'بطاريه العربيه', 'صيانه العربيه', 'مواصلات', 'تذكره', 'تذاكر'],
+  cat_bills: ['فاتوره', 'كهربا', 'كهرباء', 'النور', 'عداد', 'كارت الكهربا', 'كارت النور', 'مياه البيت', 'فاتوره الميه', 'غاز البيت', 'انبوبه', 'نت', 'انترنت', 'راوتر', 'وي', 'تي اي داتا', 'ارضي', 'تليفون ارضي', 'اشتراك الدش', 'دش', 'حارس', 'بواب', 'زباله', 'صيانه', 'سباك', 'نجار', 'كهربائي', 'نقاش', 'جمعيه', 'تكييف'],
+  cat_telecom: ['رصيد', 'كارت شحن', 'شحن', 'باقه', 'باقه نت', 'فاتوره الموبايل', 'فودافون', 'اورنج', 'اتصالات', 'وي موبايل', 'فكه'],
+  cat_health: ['صيدليه', 'دوا', 'دواء', 'ادويه', 'برشام', 'مضاد حيوي', 'بنادول', 'فيتامين', 'دكتور', 'دكتوره', 'كشف', 'عياده', 'مستشفي', 'تحاليل', 'تحليل', 'اشعه', 'سونار', 'اسنان', 'دكتور اسنان', 'نضاره', 'عدسات', 'علاج طبيعي', 'جيم', 'تأمين صحي'],
+  cat_clothes: ['هدوم', 'لبس', 'ملابس', 'تيشيرت', 'قميص', 'بنطلون', 'جينز', 'جاكيت', 'بدله', 'فستان', 'عبايه', 'جزمه', 'كوتشي', 'شبشب', 'شراب', 'بوكسر', 'ترينج', 'شنطه', 'حزام', 'ساعه', 'حلاق', 'حلاقه', 'كوافير', 'مكوه', 'مغسله', 'ترزي', 'برفان', 'بارفان', 'ميكب', 'مكياج'],
+  cat_fun: ['خروجه', 'خروج', 'فسحه', 'سينما', 'مسرح', 'كافيه', 'قهوه', 'كوفي', 'ستاربكس', 'سيلانترو', 'شيشه', 'سجاير', 'سجائر', 'معسل', 'بلايستيشن', 'بلاي ستيشن', 'العاب', 'نتفليكس', 'شاهد', 'سبوتيفاي', 'يوتيوب بريميوم', 'ماتش', 'نادي', 'رحله', 'مصيف', 'فندق', 'حفله'],
+  cat_edu: ['كورس', 'كورسات', 'درس', 'دروس', 'سنتر', 'مدرسه', 'مصاريف المدرسه', 'جامعه', 'مصاريف الجامعه', 'كتب', 'كتاب', 'ملزمه', 'كشكول', 'ادوات مكتبيه', 'مكتبه', 'تصوير ورق', 'طباعه', 'امتحان', 'شهاده', 'يوديمي'],
+  cat_gifts: ['هديه', 'هدايا', 'نقطه', 'عيديه', 'صدقه', 'زكاه', 'تبرع', 'عزومه', 'ورد', 'بوكيه'],
+  cat_shopping: ['تسوق', 'شوبينج', 'امازون', 'نون', 'جوميا', 'شي ان', 'اجهزه', 'موبايل جديد', 'شاحن', 'سماعه', 'كابل', 'جراب', 'اسكرينه', 'لابتوب', 'ادوات', 'عده', 'ايكيا', 'مفروشات', 'اثاث', 'مطبخ'],
+  cat_family: ['مصروف البيت', 'للبيت', 'ماما', 'بابا', 'امي', 'ابويا', 'اخويا', 'اختي', 'مراتي', 'جوزي', 'العيال', 'الاولاد', 'مصروف العيال', 'خدامه', 'شغاله'],
+  cat_rent: ['ايجار', 'الايجار', 'ايجار الشقه', 'قسط الشقه'],
+  cat_cash: ['سحبت', 'سحب', 'atm', 'ماكينه'],
+};
+// تصنيف سوبرماركت لو المستخدم عامله، وإلا الطعام
+const groceryCat = () => db.categories.find(c => !c.isIncome && /سوبر|ماركت|بقال/.test(nrm(lbl(c.name)))) || catByName('cat_food');
 // ================= تسجيل المصاريف بالكلام (أهم حاجة) =================
+let lastVoiceIds = [];
 // بيفهم: كذا مصروف في جملة واحدة، الأرقام بالكلام (ميتين، ألف ونص)، المبلغ قبل أو بعد البند، الحساب أو الكارت، وامبارح.
 const NW = { واحد: 1, واحده: 1, اتنين: 2, اثنين: 2, تلاته: 3, تلات: 3, ثلاثه: 3, اربعه: 4, اربع: 4, خمسه: 5, خمس: 5, سته: 6, سبعه: 7, سبع: 7, تمانيه: 8, تمن: 8, ثمانيه: 8, تسعه: 9, تسع: 9, عشره: 10,
   حداشر: 11, اتناشر: 12, تلتاشر: 13, اربعتاشر: 14, خمستاشر: 15, ستاشر: 16, سبعتاشر: 17, تمنتاشر: 18, تسعتاشر: 19,
@@ -2677,10 +2697,18 @@ function wordsToDigits(t) {
 const XVERB = /^(صرفت|دفعت|اشتريت|جبت|حطيت|شحنت|قبضت|استلمت|جالي|دخلي|كسبت|اتحولي|خدت)$/;
 const INC_VERB = /(قبضت|استلمت|جالي|دخلي|كسبت|اتحولي|مرتب|راتب|مكافاه|بونص)/;
 function catOfWords(t, income) {
+  // 1) اللي المستخدم صلّحه قبل كده ليه الأولوية
+  const ws = t.split(' ').filter(w => !/^\d/.test(w) && w.length > 1);
+  for (let n = Math.min(3, ws.length); n >= 1; n--) for (let i = 0; i + n <= ws.length; i++) {
+    const k = merchantKey(ws.slice(i, i + n).join(' ')); const k2 = k.replace(/^ال/, '');
+    const id = db.merchants[k] || db.merchants[k2]; if (id && cat(id) && cat(id).isIncome === income) return id;
+  }
+  // 2) القاموس: أطول كلمة بتطابق تكسب
   let best = null;
-  db.categories.filter(c => c.isIncome === income).forEach(c => [lbl(c.name), ...(VOICE_SYN[c.name] || [])].map(nrm).forEach(n => {
-    if (n.length >= 2 && new RegExp('(^|\\s)(ال|ب|بال|لل|ل|و|وال)?' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|\\s)').test(t) && (!best || n.length > best.n.length)) best = { c, n }; }));
-  return best && best.c.id;
+  const test = (n, id) => { if (n.length >= 2 && new RegExp('(^|\\s)(ال|ب|بال|لل|ل|و|وال)?' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|\\s)').test(t) && (!best || n.length > best.n.length)) best = { n, id }; };
+  db.categories.filter(c => c.isIncome === income).forEach(c => [lbl(c.name), ...(VOICE_SYN[c.name] || []), ...(EXTRA_SYN[c.name] || [])].map(nrm).forEach(n => test(n, c.id)));
+  if (!income) { const g = groceryCat(); if (g) GROCERY.map(nrm).forEach(n => test(n, g.id)); }
+  return best && best.id;
 }
 function accOfWords(t) {
   const live = db.accounts.filter(a => !a.archived);
@@ -2723,13 +2751,23 @@ function parseExpenses(raw) {
     let categoryId = catOfWords(st, income);
     let merchant = mm ? mm[1].replace(/\d+(\.\d+)?/g, '').replace(/(ب?الكارت|ب?الفيزا|كاش|نقدي)/g, '').trim() : '';
     if (!categoryId) { const guess = words2.join(' '); categoryId = suggestCategory(merchant || guess, income ? 'CREDIT' : 'DEBIT'); if (!merchant) merchant = guess; }
-    if (categoryId && merchant && [lbl((cat(categoryId) || {}).name || ''), ...(VOICE_SYN[(cat(categoryId) || {}).name] || [])].map(nrm).includes(nrm(merchant).replace(/^ال/, ''))) merchant = '';
+    if (!merchant) merchant = words2.filter(w => !/^(بال|ال)?(كارت|فيزا|كاش|نقدي|حاجه|حاجات|جنيه)$/.test(w) && !accOfWords(w)).join(' ');
+    if (categoryId && merchant && nrm(lbl((cat(categoryId) || {}).name || '')).replace(/^ال/, '') === nrm(merchant).replace(/^ال/, '')) merchant = '';
     if (!categoryId) categoryId = (catByName(income ? 'cat_other_inc' : 'cat_other_exp') || {}).id || null;
     return { amount, type: income ? 'INCOME' : 'EXPENSE', categoryId, merchant: merchant.slice(0, 40), accountId: accOfWords(st) || gAcc, date };
   }).filter(x => x.amount > 0);
 }
 function handleVoice(text) {
   const t = normDigits(text).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+  // تصحيح آخر مصروف بالكلام: «لا دي سوبرماركت»، «غيرها لمواصلات»، «حطها على الأكل» → ويتعلّمها
+  const fix = /^(لا|لأ|لاء)?\s*(دي|ده|خليها|خليه|غيرها|غيره|حطها|حطه|سجلها|اعتبرها|اصلا|اصلها|تبع)\s+(?:تبع\s+|علي\s+|على\s+|في\s+|ل\s*)?(.+)$/.exec(nrm(t));
+  if (fix && !/\d/.test(t) && lastVoiceIds.length) {
+    const target = catOfWords(fix[3], false) || (db.categories.find(c => !c.isIncome && nrm(lbl(c.name)).includes(fix[3].replace(/^ال/, ''))) || {}).id;
+    const txs = db.txns.filter(x => lastVoiceIds.includes(x.id));
+    if (target && txs.length) { const one = txs[txs.length - 1];
+      one.categoryId = target; if (one.merchant) learn(one.merchant, target); save(); render();
+      return { reply: `تمام، غيّرت ${one.merchant || 'آخر مصروف'} لـ ${lbl(cat(target).name)}، وهفتكرها المرة الجاية.` }; }
+  }
   if (/(يومي العادي|زي العادي|زي كل يوم|نفس كل يوم|زي امبارح)/.test(t)) {
     const miss = missedDays(); const today = !db.txns.some(x => x.type === 'EXPENSE' && x.date >= dayStart(Date.now()));
     const days = /(امبارح|الايام|فاتت)/.test(t) ? miss : today ? [Date.now()] : miss;
@@ -2832,7 +2870,7 @@ function handleVoice(text) {
     if (q.categoryId && q.merchant) learn(q.merchant, q.categoryId);
     const c = cat(q.categoryId); const ac = q.accountId && acc(q.accountId);
     lines.push(`${r0(q.amount)} ${c ? lbl(c.name) : ''}${q.merchant ? ' (' + q.merchant + ')' : ''}${ac && q.accountId !== def ? ' من ' + lbl(ac.name) : ''}`.replace(/\s+/g, ' ').trim()); });
-  save(); render();
+  save(); render(); lastVoiceIds = ids;
   const when = dayStart(items[0].date) < dayStart(Date.now()) ? (dayStart(items[0].date) < dayStart(Date.now()) - DAY ? ' (أول امبارح)' : ' (امبارح)') : '';
   const kind = items[0].type === 'INCOME' ? 'دخل' : 'مصروف';
   if (items.length === 1) return { reply: `سجّلت ${kind} ${lines[0]}${when}`, undoId: ids[0] };
@@ -2953,12 +2991,13 @@ function openChat(listen) {
     <div class="chat-bar"><textarea id="cIn" rows="1" placeholder="أو اكتب هنا..."></textarea><button class="c-send" id="cSend" aria-label="إرسال">➤</button></div>`;
   el.classList.remove('hidden'); document.body.style.overflow = 'hidden';
   const list = $('#cList');
-  const bubble = m => `<div class="msg ${m.me ? 'me' : 'bot'}" data-mid="${m.id}"><div class="bub">${esc(m.text)}${m.undo && !m.undone ? `<div><button class="btn small" data-cu="${m.id}">تراجع</button></div>` : ''}${chatGo.has(m.id) ? `<div><button class="btn small primary" data-cg="${m.id}">افتح ${esc(m.goLabel || '')}</button></div>` : ''}</div>
+  const bubble = m => `<div class="msg ${m.me ? 'me' : 'bot'}" data-mid="${m.id}"><div class="bub">${esc(m.text)}${m.undo && !m.undone ? `<div><button class="btn small" data-cu="${m.id}">تراجع</button> <button class="btn small" data-ce="${m.id}">تعديل</button></div>` : ''}${chatGo.has(m.id) ? `<div><button class="btn small primary" data-cg="${m.id}">افتح ${esc(m.goLabel || '')}</button></div>` : ''}</div>
     ${m.me ? '' : `<button class="c-say" data-cy="${m.id}" aria-label="اسمع">${ic('speaker')}</button>`}</div>`;
   const draw = () => {
     list.innerHTML = db.chat.length ? db.chat.map(bubble).join('') : `<div class="msg bot"><div class="bub">أهلاً 👋 أنا مساعدك المالي. اتكلم وقول مثلاً «صرفت 100 أكل و50 مواصلات» أو «فاضلي كام».</div></div>`;
     list.scrollTop = list.scrollHeight;
     list.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cu); const u = [].concat(m.undo); db.txns = db.txns.filter(x => !u.includes(x.id)); m.undone = true; save(); render(); add(false, u.length > 1 ? `اتلغت ${u.length} حركات` : 'اتلغت الحركة'); });
+    list.querySelectorAll('[data-ce]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.ce); const u = [].concat(m.undo); closeChat(); if (u.length === 1) openTxn(db.txns.find(x => x.id === u[0])); else setTab('txns'); });
     list.querySelectorAll('[data-cg]').forEach(b => b.onclick = () => { const f = chatGo.get(+b.dataset.cg); closeChat(); f && f(); });
     list.querySelectorAll('[data-cy]').forEach(b => b.onclick = () => { const m = db.chat.find(x => x.id === +b.dataset.cy); m && speakForce(m.text); });
   };
@@ -3670,6 +3709,7 @@ async function checkReminder() {
 setInterval(checkNotifs, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNotifs(); });
 
+if (!db.prefs.groceryCat50) { db.prefs.groceryCat50 = true; if (!db.categories.some(c => !c.isIncome && /سوبر|ماركت|بقال/.test(nrm(lbl(c.name))))) db.categories.push({ id: newId(), name: 'سوبرماركت', isIncome: false, icon: '🧺', monthlyBudget: 0 }); save(); }
 if (!db.prefs.voiceFix48) { db.prefs.voiceFix48 = true; if (db.prefs.voiceRate === 0.95 || db.prefs.voiceRate === 0.8 || db.prefs.voiceRate === 1.1) db.prefs.voiceRate = { 0.95: 1, 0.8: 0.85, 1.1: 1.15 }[db.prefs.voiceRate]; save(); }
 if (!db.prefs.voiceFix39) { db.prefs.voiceFix39 = true; db.prefs.voiceOff = false; if (db.prefs.gmVoice && !db.prefs.gmKey) db.prefs.gmVoice = 'off'; save(); }
 showLock();
