@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '66';
+const APP_VERSION = '67';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -549,7 +549,7 @@ function renderHome() {
       </div>
       ${(() => { const ps = positions(); return `<button class="pos-row" id="hPos">
         <div><span>بعد أقساط الشهر</span><b class="num">${m(ps.afterInst)}</b></div>
-        <div><span>صافي الرصيد (لك − عليك)</span><b class="num">${m(ps.net)}</b></div></button>`; })()}
+        <div><span>صافي الرصيد (لك − عليك)</span><b class="num">${m(ps.net)}</b></div><span class="go-more pos-more">${ic('chevron')}</span></button>`; })()}
       <div class="acc-scroll">${db.accounts.filter(a => !a.archived).map(a => `<button class="acc-card ${a.type === 'CREDIT' ? 'credit' : ''}" data-acc="${a.id}">
         <div class="row between"><span class="acc-ic">${accIcon(a)}</span><span class="acc-type">${ACC_TYPES[a.type] || ''}</span></div>
         <div class="acc-name ellipsis">${esc(lbl(a.name))}</div>
@@ -564,7 +564,7 @@ function renderHome() {
     ${planCard(hide)}
     ${spendCard(cats, exp, hide)}
     ${ins.length ? `<div class="card"><h3>رؤى ذكية</h3>${ins.join('')}</div>` : ''}
-    ${budgets.length ? `<div class="card"><h3>الميزانيات</h3>${budgets.map(c => { const s = cats[c.id] || 0; const p = s / c.monthlyBudget * 100;
+    ${budgets.length ? `<div class="card tap" id="hBud"><div class="row between"><h3>الميزانيات</h3>${goMore()}</div>${budgets.map(c => { const s = cats[c.id] || 0; const p = s / c.monthlyBudget * 100;
       return `<div style="margin-bottom:10px"><div class="row between"><span>${c.icon} ${esc(lbl(c.name))}</span><span class="num muted">${money(s)} / ${money(c.monthlyBudget)}</span></div>
       <div class="bar ${p >= 100 ? 'over' : p >= 80 ? 'warn' : ''}"><i style="width:${Math.min(100, p)}%"></i></div></div>`; }).join('')}</div>` : ''}
     ${db.goals.length ? `<div class="card"><h3>الأهداف</h3>${db.goals.map(g => { const p = g.target ? g.saved / g.target * 100 : 0;
@@ -586,6 +586,7 @@ function renderHome() {
   const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), tr: () => openTxn(null, { type: 'TRANSFER' }), sms: () => setTab('inbox'),
     cards: () => setTab('cards'), savings: () => setTab('savings'), ctrl: () => setTab('ctrl'), voice: openVoice };
   const hS = $('#hSpend'); if (hS) hS.onclick = () => openSpend();
+  if ($('#hBud')) $('#hBud').onclick = () => { stv.tab = 'budget'; setTab('stats'); };
   view().querySelectorAll('[data-cat]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.cat, period: 'MONTH' }; setTab('txns'); });
   if ($('#hSpeak')) $('#hSpeak').onclick = () => speak(dailyPlan().tips.map(x => x.text.replace(/<[^>]+>/g, '')).join('. '));
   $('#hMic').onclick = () => openChat(true);
@@ -1604,13 +1605,15 @@ function openSettings() {
 
 // ================= صرفت كام على إيه =================
 const PIE_COLORS = ['#1e74d6', '#0f9d58', '#e37400', '#d93025', '#8e44ad', '#00a3a3', '#c2185b', '#7c8a9e'];
+// علامة «التفاصيل ‹» على أي كارت في الرئيسية بيفتح صفحة، عشان يبان إنه بيتداس
+const goMore = (t = 'التفاصيل') => `<span class="go-more">${t} ${ic('chevron')}</span>`;
 function spendCard(cats, exp, hide) {
   const rows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
   if (!rows.length || !(exp > 0)) return '';
   return `<button class="card spend-mini" id="hSpend">
-    <div class="row between"><h3>صرفت على إيه الشهر ده</h3><span class="muted num">${hide ? '••••' : money(exp)} ‹</span></div>
+    <div class="row between"><h3>صرفت على إيه الشهر ده</h3><span class="num" style="font-weight:700">${hide ? '••••' : money(exp)}</span></div>
     <div class="stack">${rows.slice(0, 6).map(([, v], i) => `<i style="width:${v / exp * 100}%;background:${PIE_COLORS[i % PIE_COLORS.length]}"></i>`).join('')}</div>
-    <div class="row muted" style="gap:10px;font-size:13px">${rows.slice(0, 4).map(([id, v]) => { const c = cat(+id); return `<span>${c ? c.icon : '•'} ${(v / exp * 100).toFixed(0)}%</span>`; }).join('')}<span class="grow"></span><span>التفاصيل</span></div>
+    <div class="row muted" style="gap:10px;font-size:13px">${rows.slice(0, 4).map(([id, v]) => { const c = cat(+id); return `<span>${c ? c.icon : '•'} ${(v / exp * 100).toFixed(0)}%</span>`; }).join('')}<span class="grow"></span>${goMore()}</div>
   </button>`;
 }
 // صفحة المصروفات: شارت في النص، تحته أيقونات التصنيفات، وتحتهم نسبة الصرف من الشهر
@@ -1989,7 +1992,7 @@ function renderCtrl() {
 function riskCard(hide) {
   if (!hasProfile()) return db.profile && db.profile.skipped ? '' : `<div class="card reminder"><div class="row"><span class="ib warn">${ic('target')}</span><div class="grow"><b>كمّل بياناتك المالية</b><div class="muted">المرتب ويوم القبض عشان التوقعات وتنبيهات السيولة</div></div><button class="btn small primary" id="hProf">ابدأ</button></div></div>`;
   const cp = cashPlan(); const al = riskAlerts(cp).filter(a => a.lvl !== 'info').sort((a, b) => ['danger', 'warn', 'ok'].indexOf(a.lvl) - ['danger', 'warn', 'ok'].indexOf(b.lvl)).slice(0, 3);
-  return `<div class="card risk lvl-${cp.level}" id="hRisk"><div class="row between"><h3>${{ ok: '✅ السيولة تمام', warn: '⚠️ تنبيه سيولة', danger: '🚨 خطر سيولة' }[cp.level]}</h3><span class="chev">${ic('chevron')}</span></div>
+  return `<div class="card risk lvl-${cp.level}" id="hRisk"><div class="row between"><h3>${{ ok: '✅ السيولة تمام', warn: '⚠️ تنبيه سيولة', danger: '🚨 خطر سيولة' }[cp.level]}</h3>${goMore()}</div>
     ${al.map(alertH).join('')}
     <div class="muted">باقي ${cp.cyc.left} يوم على القبض · متوقع يوم القبض <b class="num">${hide ? '••••' : money(cp.atPay)}</b></div></div>`;
 }
