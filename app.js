@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '62';
+const APP_VERSION = '63';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -704,6 +704,73 @@ function renderTxns() {
   bindTxRows(view());
 }
 
+// ================= الموازنة حسب سياسة الادخار =================
+// الفترة: من آخر قبض للقبض الجاي (لو المرتب متسجل)، وإلا الشهر. الميزانية الشهرية لكل تصنيف متخزنة في monthlyBudget
+function budgetStatus() {
+  const pc = hasProfile() ? payCycle() : null; const [mf, mt] = monthRange(0);
+  const f = pc ? pc.last : mf, t = pc ? pc.next - 1 : mt; const daysLeft = pc ? pc.left : Math.max(1, Math.round((mt - dayStart(Date.now())) / DAY) + 1);
+  const spent = catTotals(inRange(f, t), 'EXPENSE');
+  const rows = db.categories.filter(c => !c.isIncome && c.monthlyBudget > 0).map(c => { const sp = spent[c.id] || 0; const left = c.monthlyBudget - sp;
+    return { c, b: c.monthlyBudget, s: sp, left, daily: Math.max(0, left) / daysLeft, fixed: c.name === 'cat_installments' || c.name === 'cat_rent' || db.recurring.some(r => r.active && r.categoryId === c.id && r.type === 'EXPENSE') }; });
+  const S = hasProfile() ? prof().salary || 0 : avgMonthly('INCOME'); const rate = db.prefs.savingRate || 20;
+  const totB = rows.reduce((a, r) => a + r.b, 0), totS = rows.reduce((a, r) => a + r.s, 0);
+  const varRows = rows.filter(r => !r.fixed); const varLeft = varRows.reduce((a, r) => a + Math.max(0, r.left), 0);
+  return { f, t, daysLeft, rows, S, rate, save: S * rate / 100, totB, totS, dailyCap: varLeft / daysLeft, varLeft, unbudgeted: Object.keys(spent).filter(k => !rows.some(r => r.c.id === +k)).reduce((a, k) => a + spent[k], 0) };
+}
+// «ضبطلي الدنيا»: المرتب − الادخار − الثابت والأقساط = المتاح، ويتوزع على التصنيفات حسب صرفك آخر 3 شهور
+const DEF_WEIGHTS = { cat_food: 35, cat_transport: 15, cat_bills: 8, cat_telecom: 4, cat_health: 6, cat_clothes: 7, cat_fun: 8, cat_shopping: 5, cat_family: 6, cat_gifts: 3, cat_edu: 3 };
+function suggestBudgets(rate) {
+  const S = hasProfile() ? prof().salary || 0 : avgMonthly('INCOME'); if (!(S > 0)) return null;
+  const save = S * rate / 100; const out = {};
+  const inst = db.installments.reduce((a, p0) => { const n = nextInstallment(p0); return a + (n ? n.payment : 0); }, 0);
+  const ic = catByName('cat_installments'); if (ic && inst) out[ic.id] = Math.round(inst);
+  db.recurring.filter(r => r.active && r.type === 'EXPENSE' && r.categoryId).forEach(r => { out[r.categoryId] = (out[r.categoryId] || 0) + conv(r.amount, recCur(r)) * (MONTH_FACTOR[r.period] || 1); });
+  const fixed = Object.values(out).reduce((a, v) => a + v, 0); const avail = Math.max(0, S - save - fixed);
+  const hist = {}; for (let o = -3; o <= -1; o++) { const [a, b] = monthRange(o); const m = catTotals(inRange(a, b), 'EXPENSE'); for (const k in m) hist[k] = (hist[k] || 0) + m[k]; }
+  const cur = catTotals(inRange(...monthRange(0)), 'EXPENSE'); for (const k in cur) hist[k] = (hist[k] || 0) + cur[k] * 0.5;
+  const varCats = db.categories.filter(c => !c.isIncome && out[c.id] == null && c.name !== 'cat_other_exp');
+  // نص الوزن من صرفك الفعلي ونص من توزيع مصري معقول، عشان شهر واحد غريب مايبوظش الموازنة
+  const th = varCats.reduce((a, c) => a + (hist[c.id] || 0), 0), td = varCats.reduce((a, c) => a + (DEF_WEIGHTS[c.name] || 0), 0);
+  let w = varCats.map(c => [c, (th ? (hist[c.id] || 0) / th : 0) * (th ? 0.5 : 0) + (td ? (DEF_WEIGHTS[c.name] || 0) / td : 0) * (th ? 0.5 : 1)]);
+  w = w.filter(x => x[1] > 0.004); const tw = w.reduce((a, x) => a + x[1], 0);
+  const nice = v => v < 100 ? Math.round(v / 10) * 10 : Math.round(v / 50) * 50;
+  w.forEach(([c, x]) => out[c.id] = nice(avail * x / tw));
+  for (const k in out) out[k] = Math.round(out[k]);
+  return { S, save, fixed, avail, out };
+}
+function openBudgetSetup() {
+  let rate = db.prefs.savingRate || 20; let sug = suggestBudgets(rate);
+  const draw = () => { sug = suggestBudgets(rate);
+    if (!sug) return sheet('ضبط الموازنة', '<div class="empty">سجّل مرتبك الأول من الإعدادات ← بياناتي المالية</div><button class="btn primary block" id="bgProf">سجّل المرتب</button>', () => $('#bgProf').onclick = () => openOnboarding(true));
+    sheet('⚙️ ضبطلي الموازنة', `
+      <label class="f">سياسة الادخار (من المرتب)</label>
+      <div class="chips">${[10, 15, 20, 25, 30, 40].map(v => `<button class="chip ${rate === v ? 'on' : ''}" data-rt="${v}">${v}%</button>`).join('')}</div>
+      <div class="mm-sum" style="margin-top:10px"><div><small>المرتب</small><span class="num">${money(sug.S)}</span></div><div><small>ادخار ${rate}%</small><span class="num mm-a">${money(sug.save)}</span></div><div><small>ثابت وأقساط</small><span class="num mm-l">${money(sug.fixed)}</span></div></div>
+      <div class="insight"><div class="grow">المتاح للصرف <b class="num">${money(sug.avail)}</b>، متوزع على التصنيفات حسب صرفك. عدّل أي رقم قبل ما تحفظ.</div></div>
+      <div class="list">${Object.entries(sug.out).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="item"><div class="ico">${cat(+k).icon}</div><div class="grow">${esc(lbl(cat(+k).name))}</div><input class="in sm num" data-bv="${k}" inputmode="decimal" value="${v}"></div>`).join('')}</div>
+      <div class="btns"><button class="btn primary" id="bgSave">حفظ الموازنة</button></div>`, () => {
+      document.querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rate = +b.dataset.rt; draw(); });
+      $('#bgSave').onclick = () => { db.prefs.savingRate = rate; db.categories.forEach(c => { if (!c.isIncome) c.monthlyBudget = 0; });
+        document.querySelectorAll('[data-bv]').forEach(el => { const c = cat(+el.dataset.bv); if (c) c.monthlyBudget = parseAmount(el.value) || 0; });
+        save(); closeSheet(); stv.tab = 'budget'; if (tab === 'stats') renderStats(); toast('اتظبطت الموازنة ✓'); };
+    }); };
+  draw();
+}
+// المساعد: «فاضلي كام في الأكل؟» و«أصرف كام النهارده؟»
+function budgetReply(t) {
+  if (!/(فاضل|باقي|متبقي|اصرف كام|اقدر اصرف|حدي|الحد اليومي|ميزاني|موازن)/.test(t) || /\d/.test(t)) return null;
+  const bs = budgetStatus(); if (!bs.rows.length) return null;
+  const c = catOfWords(t, false); const r = c && bs.rows.find(x => x.c.id === c);
+  if (r) return { reply: `ميزانية ${lbl(r.c.name)} ${r0(r.b)}، صرفت ${r0(r.s)}، ${r.left >= 0 ? `فاضلك ${r0(r.left)}، يعني حدك ${r0(r.daily)} في اليوم لحد ${hasProfile() ? 'القبض' : 'آخر الشهر'} (${bs.daysLeft} يوم)` : `وعدّيتها بـ ${r0(-r.left)}`}.`, go: () => { stv.tab = 'budget'; setTab('stats'); }, goLabel: 'الموازنة' };
+  if (c && !r) return null;
+  if (/(يوم علي|يوم على|ايام|القبض|المرتب|قسط|البطاقه|الكارت|الفيزا|دين|ديون|الشهر اللي فات|رصيد)/.test(t)) return null;
+  if (/(النهارده|اليوم|يومي|في اليوم|اصرف كام|فاضل|باقي|متبقي|ميزاني|موازن)/.test(t)) {
+    const over = bs.rows.filter(x => x.left < 0);
+    return { reply: `حدك الأقصى النهارده ${r0(bs.dailyCap)} للمصاريف المتغيرة، وفاضل منها ${r0(bs.varLeft)} على ${bs.daysLeft} يوم.${over.length ? ` عدّيت ميزانية ${over.map(x => lbl(x.c.name)).join(' و')}.` : ''}`, go: () => { stv.tab = 'budget'; setTab('stats'); }, goLabel: 'الموازنة' };
+  }
+  return null;
+}
+
 // صفحة الإحصائيات زي Money Manager: دائرة ملونة بأسماء التصنيفات ونسبها، وتحتها القائمة
 const STAT_COLORS = ['#ff6b5e', '#ff9f43', '#ffc93c', '#ffe14d', '#c5e04b', '#6bd36b', '#4fd8c8', '#5aa9e6', '#8b80f9', '#d27bf0', '#f472b6', '#9aa5b1'];
 let stv = { tab: 'stats', per: 'M', off: 0, type: 'EXPENSE' };
@@ -724,18 +791,19 @@ function pieSvg(items) {
     const am = (a0 + a1) / 2; if (x.v / tot >= 0.015 && labels.length < 10) labels.push({ am, c: x.c, n: x.n, pc: (x.v / tot * 100).toFixed(1), right: Math.cos(am) >= 0, y: cy + (r + 22) * Math.sin(am) });
     a0 = a1; });
   [true, false].forEach(side => { const L = labels.filter(l => l.right === side).sort((p, q) => p.y - q.y); let last = -1e9;
-    L.forEach(l => { l.y = Math.max(l.y, last + 30, 16); last = l.y; }); for (let i = L.length - 1, lim = H - 18; i >= 0; i--) { if (L[i].y > lim) L[i].y = lim; lim = L[i].y - 30; } });
+    L.forEach(l => { l.y = Math.max(l.y, last + 34, 18); last = l.y; }); for (let i = L.length - 1, lim = H - 20; i >= 0; i--) { if (L[i].y > lim) L[i].y = lim; lim = L[i].y - 34; } });
   const lab = labels.map(l => { const sx = cx + r * Math.cos(l.am), sy = cy + r * Math.sin(l.am); const ex = cx + (r + 16) * Math.cos(l.am), tx = l.right ? cx + r + 26 : cx - r - 26;
-    return `<path d="M${sx.toFixed(1)},${sy.toFixed(1)} Q${ex.toFixed(1)},${(cy + (r + 16) * Math.sin(l.am)).toFixed(1)} ${tx},${l.y.toFixed(1)}" fill="none" stroke="${l.c}" stroke-width="1.3"/>
-      <text x="${l.right ? tx + 4 : tx - 4}" y="${(l.y - 3).toFixed(1)}" text-anchor="${l.right ? 'start' : 'end'}" class="pl-n">${esc(l.n)}</text><text x="${l.right ? tx + 4 : tx - 4}" y="${(l.y + 12).toFixed(1)}" text-anchor="${l.right ? 'start' : 'end'}" class="pl-p">${l.pc}%</text>`; }).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" class="pie-svg">${parts.join('')}${lab}</svg>`;
+    l.tx = tx; return `<path d="M${sx.toFixed(1)},${sy.toFixed(1)} Q${ex.toFixed(1)},${(cy + (r + 16) * Math.sin(l.am)).toFixed(1)} ${tx},${l.y.toFixed(1)}" fill="none" stroke="${l.c}" stroke-width="1.3"/>`; }).join('');
+  // الأسامي HTML مش جوه الرسمة: الآيفون بيقلب الحروف العربي لو اتكتبت جوه SVG
+  const html = labels.map(l => `<div class="pl ${l.right ? 'r' : 'l'}" style="${l.right ? 'left' : 'right'}:${((l.right ? l.tx + 4 : W - l.tx + 4) / W * 100).toFixed(2)}%;top:${(l.y / H * 100).toFixed(2)}%"><b>${esc(l.n)}</b><small>${l.pc}%</small></div>`).join('');
+  return `<div class="pie-wrap"><svg viewBox="0 0 ${W} ${H}" class="pie-svg">${parts.join('')}${lab}</svg>${html}</div>`;
 }
 function renderStats() {
   const [f, t, label] = statRange(); const list = inRange(f, t); const [inc, exp] = typeTotals(list);
   const head = `<div class="st-head">
       <div class="st-seg">${[['stats', 'إحصائيات'], ['budget', 'الميزانية'], ['note', 'ملاحظات']].map(([k, v]) => `<button data-stt="${k}" class="${stv.tab === k ? 'on' : ''}">${v}</button>`).join('')}</div>
-      <select id="stPer" class="st-per">${[['W', 'أسبوعي'], ['M', 'شهري'], ['Y', 'سنوي']].map(([k, v]) => `<option value="${k}" ${stv.per === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-    <div class="st-mon"><button id="stP">‹</button><b>${label}</b><button id="stN" ${stv.off >= 0 ? 'disabled' : ''}>›</button></div>`;
+      <select id="stPer" class="st-per ${stv.tab === 'budget' ? 'hidden' : ''}">${[['W', 'أسبوعي'], ['M', 'شهري'], ['Y', 'سنوي']].map(([k, v]) => `<option value="${k}" ${stv.per === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    ${stv.tab === 'budget' ? '' : `<div class="st-mon"><button id="stP">‹</button><b>${label}</b><button id="stN" ${stv.off >= 0 ? 'disabled' : ''}>›</button></div>`}`;
   let body = '';
   if (stv.tab === 'stats') {
     const cats = catTotals(list, stv.type); const tot = Object.values(cats).reduce((a, v) => a + v, 0);
@@ -744,11 +812,19 @@ function renderStats() {
     body = `<div class="st-io"><button data-sty="INCOME" class="${stv.type === 'INCOME' ? 'on' : ''}">الدخل <b class="num">${money(inc)}</b></button><button data-sty="EXPENSE" class="${stv.type === 'EXPENSE' ? 'on' : ''}">المصروفات <b class="num">${money(exp)}</b></button></div>
       ${items.length ? `<div class="card st-pie">${pieSvg(items)}</div><div class="mm-list">${items.map(x => `<div class="mm-r" data-stc="${x.k}"><span class="mm-pct" style="background:${x.c}">${Math.round(x.v / tot * 100)}%</span><span class="grow ellipsis">${x.ic} ${esc(x.n)}</span><span class="num">${money(x.v)}</span></div>`).join('')}</div>` : `<div class="empty">مفيش ${stv.type === 'INCOME' ? 'دخل' : 'مصروفات'} في الفترة دي</div>`}`;
   } else if (stv.tab === 'budget') {
-    const cats = catTotals(list, 'EXPENSE'); const bud = db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome);
-    const k = stv.per === 'Y' ? 12 : stv.per === 'W' ? 7 / 30 : 1; const totB = bud.reduce((a, c) => a + c.monthlyBudget * k, 0); const totS = bud.reduce((a, c) => a + (cats[c.id] || 0), 0);
-    body = bud.length ? `<div class="card"><div class="row between"><b>الميزانية الكلية</b><span class="num">${money(totS)} / ${money(totB)}</span></div><div class="bar ${totS > totB ? 'over' : totS > totB * .8 ? 'warn' : 'good'}"><i style="width:${Math.min(100, totS / totB * 100)}%"></i></div><div class="muted" style="margin-top:6px">فاضل ${money(Math.max(0, totB - totS))}</div></div>
-      <div class="card">${bud.map(c => { const v = cats[c.id] || 0, b = c.monthlyBudget * k, p = v / b * 100; return `<div class="rule"><div class="row between"><span>${c.icon} ${esc(lbl(c.name))}</span><span class="num muted">${money(v)} / ${money(b)}</span></div><div class="bar ${p >= 100 ? 'over' : p >= 80 ? 'warn' : 'good'}"><i style="width:${Math.min(100, p)}%"></i></div></div>`; }).join('')}</div>`
-      : `<div class="empty">مفيش ميزانيات. حددها من المزيد ← التصنيفات والميزانيات.</div><button class="btn primary block" id="stBud">حدد الميزانيات</button>`;
+    const bs = budgetStatus(); const pct = (x, y) => y ? Math.min(100, x / y * 100) : 0; const cls = p => p >= 100 ? 'over' : p >= 80 ? 'warn' : 'good';
+    body = bs.rows.length ? `<div class="card bg-top">
+        <div class="row between"><b>الموازنة لحد ${hasProfile() ? 'القبض' : 'آخر الشهر'}</b><span class="muted">باقي ${bs.daysLeft} يوم</span></div>
+        <div class="mm-sum" style="margin:10px 0 8px"><div><small>الموازنة</small><span class="num">${money(bs.totB)}</span></div><div><small>صرفت</small><span class="num mm-l">${money(bs.totS)}</span></div><div><small>فاضل</small><span class="num ${bs.totB - bs.totS < 0 ? 'mm-l' : 'mm-a'}">${money(bs.totB - bs.totS)}</span></div></div>
+        <div class="bar ${cls(pct(bs.totS, bs.totB))}"><i style="width:${pct(bs.totS, bs.totB)}%"></i></div>
+        <div class="bg-cap"><span>🎯 حدك الأقصى النهارده</span><b class="num">${money(bs.dailyCap)}</b></div>
+        <div class="muted">ادخار ${bs.rate}% = ${money(bs.save)} من المرتب${bs.unbudgeted > 0 ? ` · صرف برا الموازنة ${money(bs.unbudgeted)}` : ''}</div></div>
+      <div class="mm-list">${bs.rows.sort((x, y) => y.b - x.b).map(r => `<div class="bg-r" data-bgc="${r.c.id}">
+        <div class="row between"><span>${r.c.icon} ${esc(lbl(r.c.name))}${r.fixed ? ' <small class="muted">ثابت</small>' : ''}</span><span class="num ${r.left < 0 ? 'mm-l' : ''}">${r.left < 0 ? 'عدّيت ' + money(-r.left) : 'فاضل ' + money(r.left)}</span></div>
+        <div class="bar ${cls(pct(r.s, r.b))}"><i style="width:${pct(r.s, r.b)}%"></i></div>
+        <div class="row between muted bg-sub"><span>صرفت ${money(r.s)} من ${money(r.b)}</span>${r.fixed ? '' : `<span>حد يومي <b class="num">${money(r.daily)}</b></span>`}</div></div>`).join('')}</div>
+      <button class="btn block" id="stBud" style="margin-top:10px">⚙️ ضبطلي الموازنة تاني</button>`
+      : `<div class="empty">مفيش موازنة لسه. خليني أظبطهالك من مرتبك ونسبة الادخار.</div><button class="btn primary block" id="stBud">⚙️ ضبطلي الدنيا</button>`;
   } else {
     const g = {}; list.filter(x => x.type === stv.type).forEach(x => { const k = (x.merchant || '').trim() || '(من غير وصف)'; g[k] = g[k] || { n: 0, v: 0 }; g[k].n++; g[k].v += conv(x.amount, txCur(x)); });
     const ks = Object.keys(g).sort((a, b) => g[b].v - g[a].v);
@@ -759,9 +835,10 @@ function renderStats() {
   view().querySelectorAll('[data-stt]').forEach(b => b.onclick = () => { stv.tab = b.dataset.stt; renderStats(); });
   view().querySelectorAll('[data-sty]').forEach(b => b.onclick = () => { stv.type = b.dataset.sty; renderStats(); });
   $('#stPer').onchange = e => { stv.per = e.target.value; stv.off = 0; renderStats(); };
-  $('#stP').onclick = () => { stv.off--; renderStats(); }; $('#stN').onclick = () => { if (stv.off < 0) { stv.off++; renderStats(); } };
+  if ($('#stP')) { $('#stP').onclick = () => { stv.off--; renderStats(); }; $('#stN').onclick = () => { if (stv.off < 0) { stv.off++; renderStats(); } }; }
   $('#stRep').onclick = () => setTab('reports');
-  if ($('#stBud')) $('#stBud').onclick = openCategories;
+  if ($('#stBud')) $('#stBud').onclick = openBudgetSetup;
+  view().querySelectorAll('[data-bgc]').forEach(el => el.onclick = () => { filter = { q: '', type: 'EXPENSE', accountId: 0, categoryId: +el.dataset.bgc, period: 'MONTH' }; setTab('txns'); });
   view().querySelectorAll('[data-stc]').forEach(el => el.onclick = () => { filter = { q: '', type: stv.type, accountId: 0, categoryId: +el.dataset.stc, period: 'MONTH' }; setTab('txns'); });
   view().querySelectorAll('[data-stn]').forEach(el => el.onclick = () => { filter = { q: el.dataset.stn.replace(/^\(من غير وصف\)$/, ''), type: stv.type, accountId: 0, categoryId: 0, period: 'MONTH' }; setTab('txns'); });
 }
@@ -3087,6 +3164,7 @@ function handleVoice(text) {
     return { reply: `سجّلت ${Math.round(r.total)} جنيه تقديري لـ ${days.length === 1 ? 'يوم' : days.length + ' أيام'}، وتقدر تعدّلها من الحركات` };
   }
   const va = voiceActions(t); if (va) return va;
+  const br = budgetReply(nrm(t)); if (br) return br;
   const dr = dataReply(t); if (dr) return dr;
   const hr = helpReply(t); if (hr) return hr;
   const p = dailyPlan();

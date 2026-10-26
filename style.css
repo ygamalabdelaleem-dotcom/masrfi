@@ -646,3 +646,14 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .pie-svg { width: 100%; height: auto; display: block; direction: ltr; }
 .pie-svg .pl-n { font-size: 12px; font-weight: 700; fill: var(--text); }
 .pie-svg .pl-p { font-size: 11.5px; fill: var(--muted); }
+.pie-wrap { position: relative; }
+.pie-svg { direction: ltr; }
+.pl { position: absolute; transform: translateY(-50%); display: flex; flex-direction: column; line-height: 1.2; white-space: nowrap; pointer-events: none; }
+.pl.r { align-items: flex-start; } .pl.l { align-items: flex-end; }
+.pl b { font-size: 12px; font-weight: 700; } .pl small { font-size: 11px; color: var(--muted); direction: ltr; }
+.bg-top .bar { height: 10px; }
+.bg-cap { display: flex; justify-content: space-between; align-items: center; background: var(--primary-soft); border-radius: 10px; padding: 10px 12px; margin: 12px 0 6px; }
+.bg-cap b { font-size: 20px; color: var(--primary); }
+.bg-r { padding: 12px; border-top: 1px solid var(--line); cursor: pointer; }
+.bg-r:first-child { border-top: 0; }
+.bg-sub { font-size: 12.5px; margin-top: 5px; }
