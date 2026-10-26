@@ -575,3 +575,54 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .sk-w > button[data-sk].on { border-color: var(--primary); }
 .sk-w > button[data-sk] i { width: 100%; height: 44px; border-radius: 10px; display: block; }
 .skins .sk-x { position: absolute; flex-direction: row; border: 0 !important; z-index: 1; top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--exp); color: #fff; font-size: 11px; display: grid; place-items: center; padding: 0; }
+
+/* صفحة الحركات بستايل Money Manager */
+.tx-in { color: var(--primary); } .tx-out { color: var(--exp); } .tx-tr { color: var(--muted); }
+.mm-top { display: flex; align-items: center; gap: 6px; margin: 12px 0 4px; }
+.mm-top b { flex: 1; text-align: center; font-size: 17px; }
+.icon-btn2 { border: 0; background: var(--card); color: var(--text); width: 38px; height: 38px; border-radius: 12px; font-size: 17px; display: grid; place-items: center; }
+.icon-btn2.on { background: var(--primary); color: #fff; }
+.mm-top #txS { order: -1; }
+.mm-mon2 { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 6px; }
+.mm-mon2 b { font-size: 16px; }
+.mm-mon2 button { border: 0; background: none; color: var(--text); font-size: 26px; width: 40px; height: 36px; }
+.mm-mon2 button:disabled { opacity: .25; }
+.mm-tabs { display: flex; border-bottom: 1px solid var(--line); margin: 0 -16px; padding: 0 8px; background: var(--card); }
+.mm-tabs button { flex: 1; border: 0; background: none; padding: 11px 0 9px; color: var(--muted); font-weight: 600; font-size: 14px; border-bottom: 2.5px solid transparent; }
+.mm-tabs button.on { color: var(--text); border-bottom-color: var(--exp); }
+.mm-tot { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; background: var(--card); margin: 0 -16px 10px; padding: 8px 4px 10px; border-bottom: 1px solid var(--line); }
+.mm-tot small { display: block; color: var(--muted); font-size: 12.5px; }
+.mm-tot b { font-size: 15px; }
+.mm-day { background: var(--card); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.mm-dh { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.mm-dh > b { font-size: 26px; font-weight: 700; line-height: 1; min-width: 32px; }
+.mm-dd { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.mm-dd small { color: var(--muted); font-size: 11.5px; direction: ltr; }
+.mm-dd i { font-style: normal; font-size: 11px; background: var(--muted); color: #fff; border-radius: 4px; padding: 0 6px; }
+.mm-dd i.fri { background: var(--exp); }
+.mm-dh .num { font-size: 13.5px; font-weight: 600; min-width: 64px; text-align: left; }
+.mm-tx { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 10px; padding: 11px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.mm-tx:last-child { border-bottom: 0; }
+.mm-tx.item { display: grid; padding: 11px 12px; }
+.mm-tx-c { color: var(--muted); font-size: 12.5px; line-height: 1.35; overflow: hidden; }
+.mm-tx-m { min-width: 0; display: flex; flex-direction: column; }
+.mm-tx-m b { font-weight: 600; font-size: 14.5px; }
+.mm-tx-m small { color: var(--muted); font-size: 12px; }
+.mm-tx .num { font-weight: 600; font-size: 14.5px; }
+.mm-tx .num small { color: var(--muted); font-size: 11px; }
+.cal { background: var(--card); border-radius: 12px; overflow: hidden; margin-bottom: 10px; }
+.cal-h, .cal-g { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-h span { text-align: center; font-size: 11.5px; color: var(--muted); padding: 6px 0; border-bottom: 1px solid var(--line); }
+.cal-h span:nth-child(6) { color: var(--exp); }
+.cal-c { min-height: 58px; border: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); background: none; color: var(--text); display: flex; flex-direction: column; align-items: stretch; padding: 3px; gap: 1px; text-align: right; }
+.cal-c b { font-size: 12px; font-weight: 600; }
+.cal-c small { font-size: 9.5px; text-align: left; overflow: hidden; }
+.cal-c.today b { color: #fff; background: var(--exp); border-radius: 50%; width: 20px; height: 20px; display: grid; place-items: center; }
+.cal-c.on { background: var(--primary-soft); }
+.mm-wk { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; align-items: center; gap: 6px; width: 100%; text-align: right; background: var(--card); border: 0; border-bottom: 1px solid var(--line); padding: 13px 12px; color: var(--text); font-size: 14px; }
+.mm-wk .num { text-align: left; font-weight: 600; font-size: 13.5px; }
+.mm-wk.hd { background: none; padding: 4px 12px; border: 0; } .mm-wk.hd small { color: var(--muted); text-align: left; }
+.mm-wk.cur { background: var(--primary-soft); }
+.mm-sr { padding: 7px 0; border-bottom: 1px solid var(--line); }
+.fab-add { position: fixed; z-index: 12; right: 16px; bottom: calc(92px + env(safe-area-inset-bottom)); width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--exp); color: #fff; display: grid; place-items: center; box-shadow: 0 6px 18px color-mix(in srgb, var(--exp) 45%, transparent); }
+.fab-add svg.i { width: 28px; height: 28px; }

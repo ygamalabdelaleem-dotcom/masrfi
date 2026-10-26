@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '60';
+const APP_VERSION = '61';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -430,6 +430,7 @@ const view = () => $('#view');
 
 const SUB_VIEWS = { cards: 'more', savings: 'home', inbox: 'home', ctrl: 'home' };
 function setTab(t) {
+  if (t === 'txns') { txv.off = filter.period === 'LAST' ? -1 : 0; if (txv.mode === 'monthly') txv.mode = 'daily'; }
   if (t === 'add') { openTxn(); return; }
   tab = t;
   const main = SUB_VIEWS[t] || t;
@@ -600,37 +601,106 @@ function renderHome() {
   bindTxRows(view());
 }
 
-function renderTxns() {
-  const [f, to] = periodRange(filter.period);
+// صفحة الحركات زي Money Manager: شهر بشهر، وتبويبات يومي/تقويم/أسبوعي/شهري/ملخص
+let txv = { mode: 'daily', off: 0, search: false, day: null };
+const AR_WD_SHORT = ['حد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'];
+function txFiltered(f, to) {
   const q = filter.q.trim().toLowerCase();
-  const list = db.txns.filter(t => t.date >= f && t.date <= to
+  return db.txns.filter(t => t.date >= f && t.date <= to
     && (!filter.type || t.type === filter.type)
     && (!filter.accountId || t.accountId === filter.accountId || t.toAccountId === filter.accountId)
     && (!filter.categoryId || t.categoryId === filter.categoryId)
-    && (!q || (t.merchant + ' ' + t.note).toLowerCase().includes(q) || String(t.amount).includes(q))
-  ).sort((a, b) => b.date - a.date);
-  const [inc, exp] = typeTotals(list);
-  const shown = list.slice(0, 300);
+    && (!q || (t.merchant + ' ' + t.note + ' ' + lbl((cat(t.categoryId) || {}).name || '')).toLowerCase().includes(q) || String(t.amount).includes(q))
+  ).sort((x, y) => y.date - x.date);
+}
+const ioOf = list => { let i = 0, e = 0; list.forEach(t => { const v = conv(t.amount, txCur(t)); if (t.type === 'INCOME') i += v; else if (t.type === 'EXPENSE') e += v; }); return [i, e]; };
+const mo = v => money(v).replace(/\.00$/, '');
+// سطر الحركة: التصنيف على الجنب، والوصف والحساب في النص، والمبلغ
+function mmRow(t) {
+  const a = acc(t.accountId); const c = cat(t.categoryId); const cur = a ? a.currency : base();
+  let catTxt = c ? `${c.icon} ${esc(lbl(c.name))}` : 'بدون تصنيف', main = esc(t.merchant || (/^بالصوت/.test(t.note || '') ? '' : t.note) || ''), sub = esc(lbl(a ? a.name : '')), cls = 'tx-out';
+  if (t.type === 'INCOME') cls = 'tx-in';
+  if (t.type === 'TRANSFER') { catTxt = 'تحويل'; cls = 'tx-tr'; const arrow = `${esc(lbl(a ? a.name : ''))} ← ${esc(lbl((acc(t.toAccountId) || {}).name || ''))}`; if (main) sub = arrow; else { main = arrow; sub = ''; } }
+  if (t.type === 'ADJUST') { catTxt = t.merchant ? '🤝 سلف' : '⚖️ تسوية'; cls = t.dir < 0 ? 'tx-out' : 'tx-in'; main = esc(t.merchant || 'تسوية رصيد'); }
+  if (!main) { main = c ? esc(lbl(c.name)) : ''; }
+  return `<div class="mm-tx" data-tx="${t.id}"><div class="mm-tx-c">${catTxt}${t.fav ? ' ⭐' : ''}</div>
+    <div class="mm-tx-m"><b class="ellipsis">${main}${t.source === 'ESTIMATE' ? ' <span class="pill">تقديري</span>' : ''}</b>${sub ? `<small class="ellipsis">${sub}</small>` : ''}</div>
+    <div class="num ${cls}">${money(t.amount)}${cur !== base() ? ` <small>${cur}</small>` : ''}</div></div>`;
+}
+function dayGroups(list) {
+  const g = new Map(); list.forEach(t => { const k = dayStart(t.date); if (!g.has(k)) g.set(k, []); g.get(k).push(t); });
+  return [...g.entries()].map(([d, ts]) => { const [i, e] = ioOf(ts); const dt = new Date(d);
+    return `<div class="mm-day"><div class="mm-dh"><b>${dt.getDate()}</b><span class="mm-dd"><small>${dt.getFullYear()}/${pad(dt.getMonth() + 1)}</small><i class="${dt.getDay() === 5 ? 'fri' : ''}">${AR_WD_SHORT[dt.getDay()]}</i></span>
+      <span class="num tx-in">${mo(i)}</span><span class="num tx-out">${mo(e)}</span></div>${ts.map(mmRow).join('')}</div>`; }).join('');
+}
+function renderTxns() {
+  const m = txv.mode; const yr = new Date().getFullYear() + (m === 'monthly' ? txv.off : 0);
+  const [f, to] = m === 'monthly' ? [new Date(yr, 0, 1).getTime(), new Date(yr + 1, 0, 1).getTime() - 1] : monthRange(txv.off);
+  const list = txFiltered(f, to); const [inc, exp] = ioOf(list);
+  const title = m === 'monthly' ? String(yr) : new Date(f).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+  const fl = [filter.type && { EXPENSE: 'مصروف', INCOME: 'دخل', TRANSFER: 'تحويل' }[filter.type], filter.accountId && acc(filter.accountId) && lbl(acc(filter.accountId).name), filter.categoryId && cat(filter.categoryId) && lbl(cat(filter.categoryId).name)].filter(Boolean);
+  let body = '';
+  if (m === 'daily') body = list.length ? dayGroups(list.slice(0, 400)) : '<div class="empty">مفيش حركات في الشهر ده</div>';
+  else if (m === 'calendar') {
+    const d0 = new Date(f); const first = new Date(d0.getFullYear(), d0.getMonth(), 1).getDay(); const days = new Date(d0.getFullYear(), d0.getMonth() + 1, 0).getDate();
+    const cells = []; for (let i = 0; i < first; i++) cells.push('<div class="cal-c empty"></div>');
+    for (let d = 1; d <= days; d++) { const ds = new Date(d0.getFullYear(), d0.getMonth(), d).getTime(); const ts = list.filter(t => dayStart(t.date) === ds); const [i, e] = ioOf(ts);
+      cells.push(`<button class="cal-c ${dayStart(Date.now()) === ds ? 'today' : ''} ${txv.day === ds ? 'on' : ''}" data-cd="${ds}"><b>${d}</b>${i ? `<small class="num tx-in">${mo(i)}</small>` : ''}${e ? `<small class="num tx-out">${mo(e)}</small>` : ''}</button>`); }
+    const sel = txv.day && txv.day >= f && txv.day <= to ? list.filter(t => dayStart(t.date) === txv.day) : [];
+    body = `<div class="cal"><div class="cal-h">${AR_WD_SHORT.map(w => `<span>${w}</span>`).join('')}</div><div class="cal-g">${cells.join('')}</div></div>${sel.length ? dayGroups(sel) : txv.day ? '<div class="empty">مفيش حركات في اليوم ده</div>' : ''}`;
+  } else if (m === 'weekly') {
+    const rows = []; let s0 = dayStart(f); while (s0 <= to) { const e0 = Math.min(to, s0 + 7 * DAY - 1); const [i, e] = ioOf(list.filter(t => t.date >= s0 && t.date <= e0));
+      rows.push(`<div class="mm-wk ${Date.now() >= s0 && Date.now() <= e0 ? 'cur' : ''}"><span>${new Date(s0).getDate()} - ${new Date(e0).getDate()} ${new Date(s0).toLocaleDateString('ar-EG', { month: 'short' })}</span><span class="num tx-in">${mo(i)}</span><span class="num tx-out">${mo(e)}</span><span class="num">${mo(i - e)}</span></div>`); s0 = e0 + 1; }
+    body = `<div class="mm-wk hd"><span></span><small>دخل</small><small>مصروف</small><small>الصافي</small></div>${rows.reverse().join('')}`;
+  } else if (m === 'monthly') {
+    const rows = []; for (let k = 11; k >= 0; k--) { const a0 = new Date(yr, k, 1).getTime(), b0 = new Date(yr, k + 1, 1).getTime() - 1; if (a0 > Date.now()) continue;
+      const [i, e] = ioOf(list.filter(t => t.date >= a0 && t.date <= b0)); rows.push(`<button class="mm-wk" data-mo="${k}"><span>${new Date(a0).toLocaleDateString('ar-EG', { month: 'long' })}</span><span class="num tx-in">${mo(i)}</span><span class="num tx-out">${mo(e)}</span><span class="num">${mo(i - e)}</span></button>`); }
+    body = `<div class="mm-wk hd"><span></span><small>دخل</small><small>مصروف</small><small>الصافي</small></div>${rows.join('')}`;
+  } else {
+    const byAcc = {}; list.filter(t => t.type === 'EXPENSE').forEach(t => byAcc[t.accountId] = (byAcc[t.accountId] || 0) + conv(t.amount, txCur(t)));
+    const cats = catTotals(list, 'EXPENSE'); const ck = Object.keys(cats).sort((x, y) => cats[y] - cats[x]);
+    const bud = db.categories.filter(c => c.monthlyBudget > 0 && !c.isIncome);
+    body = `<div class="card"><h3>المصروفات حسب الحساب</h3>${Object.keys(byAcc).sort((x, y) => byAcc[y] - byAcc[x]).map(k => `<div class="row between mm-sr"><span>${esc(lbl((acc(+k) || {}).name || ''))}</span><span class="num tx-out">${money(byAcc[k])}</span></div>`).join('') || '<div class="muted">مفيش</div>'}</div>
+      <div class="card"><h3>المصروفات حسب التصنيف</h3>${ck.map((k, i) => `<div class="mm-r" data-scat="${k}"><span class="mm-pct" style="background:${PIE_COLORS[i % PIE_COLORS.length]}">${exp ? Math.round(cats[k] / exp * 100) : 0}%</span><span class="grow ellipsis">${cat(+k) ? cat(+k).icon + ' ' + esc(lbl(cat(+k).name)) : 'بدون تصنيف'}</span><span class="num">${money(cats[k])}</span></div>`).join('') || '<div class="muted">مفيش</div>'}</div>
+      ${bud.length ? `<div class="card"><h3>الميزانية</h3>${bud.map(c => { const v = cats[c.id] || 0; const p = v / c.monthlyBudget * 100; return `<div class="rule"><div class="row between"><span>${c.icon} ${esc(lbl(c.name))}</span><span class="num muted">${mo(v)} / ${mo(c.monthlyBudget)}</span></div><div class="bar ${p >= 100 ? 'over' : p >= 80 ? 'warn' : 'good'}"><i style="width:${Math.min(100, p)}%"></i></div></div>`; }).join('')}</div>` : ''}
+      <button class="btn block" id="txCsv">⬇️ تصدير الحركات Excel/CSV</button>`;
+  }
   view().innerHTML = `
-    <div class="card">
-      <input class="in" id="q" placeholder="🔍 بحث بالتاجر أو الملاحظة أو المبلغ" value="${esc(filter.q)}">
-      <div class="chips" style="margin-top:8px">${Object.entries(PERIOD_LABELS).map(([k, v]) => `<button class="chip ${filter.period === k ? 'on' : ''}" data-p="${k}">${v}</button>`).join('')}</div>
-      <div class="chips" style="margin-top:6px">${[['', 'كل الأنواع'], ['EXPENSE', 'مصروف'], ['INCOME', 'دخل'], ['TRANSFER', 'تحويل']].map(([k, v]) => `<button class="chip ${filter.type === k ? 'on' : ''}" data-t="${k}">${v}</button>`).join('')}</div>
-      <div class="grid2" style="margin-top:8px">
-        <select class="in" id="fa"><option value="0">كل الحسابات</option>${db.accounts.map(a => `<option value="${a.id}" ${filter.accountId === a.id ? 'selected' : ''}>${esc(lbl(a.name))}</option>`).join('')}</select>
-        <select class="in" id="fc"><option value="0">كل التصنيفات</option>${db.categories.map(c => `<option value="${c.id}" ${filter.categoryId === c.id ? 'selected' : ''}>${c.icon} ${esc(lbl(c.name))}</option>`).join('')}</select>
-      </div>
-      <div class="row between" style="margin-top:10px"><span class="muted">${list.length} حركة</span>
-        <span class="num"><span class="inc">+${money(inc)}</span> · <span class="exp">-${money(exp)}</span></span></div>
-    </div>
-    <div class="card list">${shown.length ? shown.map(txRow).join('') : '<div class="empty">لا توجد نتائج</div>'}
-    ${list.length > shown.length ? `<div class="muted" style="text-align:center;padding-top:8px">يتم عرض أحدث 300 حركة، استخدم الفلاتر لتضييق النتائج</div>` : ''}</div>`;
+    <div class="mm-top"><button class="icon-btn2" id="txS" aria-label="بحث">🔍</button><b></b><button class="icon-btn2" id="txFav" aria-label="المفضلة">☆</button><button class="icon-btn2 ${fl.length ? 'on' : ''}" id="txF" aria-label="فلتر">⚙︎</button></div>
+    ${txv.search || filter.q ? `<input class="in" id="q" placeholder="🔍 بحث بالوصف أو التصنيف أو المبلغ" value="${esc(filter.q)}" style="margin-bottom:8px">` : ''}
+    ${fl.length ? `<div class="chips" style="margin-bottom:8px">${fl.map(x => `<span class="chip on">${esc(x)}</span>`).join('')}<button class="chip" id="txClr">✕ مسح الفلتر</button></div>` : ''}
+    <div class="mm-mon2"><button id="txP" aria-label="السابق">‹</button><b>${title}</b><button id="txN" aria-label="التالي" ${txv.off >= 0 ? 'disabled' : ''}>›</button></div>
+    <div class="mm-tabs">${[['daily', 'يومي'], ['calendar', 'تقويم'], ['weekly', 'أسبوعي'], ['monthly', 'شهري'], ['summary', 'ملخص']].map(([k, v]) => `<button data-tm="${k}" class="${m === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div class="mm-tot"><div><small>الدخل</small><b class="num tx-in">${money(inc)}</b></div><div><small>المصروفات</small><b class="num tx-out">${money(exp)}</b></div><div><small>الإجمالي</small><b class="num">${money(inc - exp)}</b></div></div>
+    <div class="mm-body">${body}</div>
+    <button class="fab-add" id="txAdd" aria-label="حركة جديدة">${ic('plus')}</button>`;
   const qi = $('#q');
-  qi.oninput = () => { filter.q = qi.value; clearTimeout(qi._t); qi._t = setTimeout(() => { renderTxns(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 300); };
-  view().querySelectorAll('[data-p]').forEach(b => b.onclick = () => { filter.period = b.dataset.p; renderTxns(); });
-  view().querySelectorAll('[data-t]').forEach(b => b.onclick = () => { filter.type = b.dataset.t; renderTxns(); });
-  $('#fa').onchange = e => { filter.accountId = +e.target.value; renderTxns(); };
-  $('#fc').onchange = e => { filter.categoryId = +e.target.value; renderTxns(); };
+  if (qi) { qi.oninput = () => { filter.q = qi.value; clearTimeout(qi._t); qi._t = setTimeout(() => { renderTxns(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 300); }; if (txv.search && !filter.q) qi.focus(); }
+  $('#txS').onclick = () => { txv.search = !txv.search; if (!txv.search) filter.q = ''; renderTxns(); };
+  $('#txP').onclick = () => { txv.off--; txv.day = null; renderTxns(); };
+  $('#txN').onclick = () => { if (txv.off < 0) { txv.off++; txv.day = null; renderTxns(); } };
+  view().querySelectorAll('[data-tm]').forEach(b => b.onclick = () => { if ((b.dataset.tm === 'monthly') !== (m === 'monthly')) txv.off = 0; txv.mode = b.dataset.tm; renderTxns(); });
+  view().querySelectorAll('[data-cd]').forEach(b => b.onclick = () => { txv.day = +b.dataset.cd; renderTxns(); });
+  view().querySelectorAll('[data-mo]').forEach(b => b.onclick = () => { const n = new Date(); txv.off = (yr - n.getFullYear()) * 12 + (+b.dataset.mo - n.getMonth()); txv.mode = 'daily'; renderTxns(); });
+  view().querySelectorAll('[data-scat]').forEach(b => b.onclick = () => { filter.categoryId = +b.dataset.scat; filter.type = 'EXPENSE'; txv.mode = 'daily'; renderTxns(); });
+  if ($('#txClr')) $('#txClr').onclick = () => { filter = { q: '', type: '', accountId: 0, categoryId: 0, period: 'ALL' }; renderTxns(); };
+  if ($('#txCsv')) $('#txCsv').onclick = exportCsv;
+  $('#txAdd').onclick = () => openTxn();
+  $('#txF').onclick = () => sheet('فلتر', `
+    <label class="f">النوع</label><div class="chips">${[['', 'الكل'], ['EXPENSE', 'مصروف'], ['INCOME', 'دخل'], ['TRANSFER', 'تحويل']].map(([k, v]) => `<button class="chip ${filter.type === k ? 'on' : ''}" data-ft="${k}">${v}</button>`).join('')}</div>
+    <label class="f">الحساب</label><select class="in" id="fa"><option value="0">كل الحسابات</option>${db.accounts.map(a => `<option value="${a.id}" ${filter.accountId === a.id ? 'selected' : ''}>${esc(lbl(a.name))}</option>`).join('')}</select>
+    <label class="f">التصنيف</label><select class="in" id="fc"><option value="0">كل التصنيفات</option>${db.categories.map(c => `<option value="${c.id}" ${filter.categoryId === c.id ? 'selected' : ''}>${c.icon} ${esc(lbl(c.name))}</option>`).join('')}</select>
+    <div class="btns"><button class="btn primary" id="fGo">تطبيق</button><button class="btn" id="fRs">مسح</button></div>`, () => {
+    let ty = filter.type; document.querySelectorAll('[data-ft]').forEach(b => b.onclick = () => { ty = b.dataset.ft; document.querySelectorAll('[data-ft]').forEach(x => x.classList.toggle('on', x === b)); });
+    $('#fGo').onclick = () => { filter.type = ty; filter.accountId = +$('#fa').value; filter.categoryId = +$('#fc').value; closeSheetQuiet(); renderTxns(); };
+    $('#fRs').onclick = () => { filter = { q: '', type: '', accountId: 0, categoryId: 0, period: 'ALL' }; closeSheetQuiet(); renderTxns(); };
+  });
+  // المفضلة: حركات بتتكرر (زي قالب)، دوسة واحدة تفتحها جديدة بتاريخ النهارده
+  $('#txFav').onclick = () => { const favs = db.txns.filter(t => t.fav);
+    sheet('⭐ المفضلة', `${favs.length ? `<div class="mm-list">${favs.map(t => mmRow(t).replace('data-tx=', 'data-fv=')).join('')}</div><p class="muted">دوس على أي واحدة تسجّلها تاني بتاريخ النهارده.</p>` : '<div class="empty">مفيش مفضلة لسه. افتح أي حركة ودوس ☆ عشان تضيفها هنا.</div>'}`, () => {
+      document.querySelectorAll('[data-fv]').forEach(el => el.onclick = () => { const t = db.txns.find(x => x.id === +el.dataset.fv); if (!t) return; closeSheetQuiet();
+        openTxn(null, { type: t.type, amount: t.amount, accountId: t.accountId, toAccountId: t.toAccountId, categoryId: t.categoryId, merchant: t.merchant, note: '', date: Date.now() }); }); }); };
+  view().querySelectorAll('.mm-tx[data-tx]').forEach(el => el.classList.add('item'));
   bindTxRows(view());
 }
 
@@ -3269,7 +3339,7 @@ function openTxn(t, preset) {
       <div class="seg">${['DAILY', 'WEEKLY', 'MONTHLY'].map(k => `<button data-fp="${k}" class="${(t.fixPeriod || 'MONTHLY') === k ? 'on' : ''}">${PERIODS[k]}</button>`).join('')}</div>
       <label class="row" style="margin-top:8px"><input type="checkbox" id="tFixAuto" ${t.fixAuto ? 'checked' : ''}> سجّله تلقائياً في معاده</label>
     </div>`) : ''}
-    <div class="btns"><button class="btn primary" id="tSave">حفظ</button>${isNew ? '' : '<button class="btn" id="tDup">⧉ تكرار</button><button class="btn danger" id="tDel">حذف</button>'}</div>`, body => {
+    <div class="btns"><button class="btn primary" id="tSave">حفظ</button>${isNew ? '' : '<button class="btn" id="tFav">' + (t.fav ? '⭐' : '☆') + ' مفضلة</button><button class="btn" id="tDup">⧉ تكرار</button><button class="btn danger" id="tDel">حذف</button>'}</div>`, body => {
     const hrs = () => { const v = parseAmount($('#tAmt').value); const a = acc(+$('#tAcc').value); $('#tHrs').textContent = type === 'EXPENSE' && v ? '⏱️ = ' + workTime(conv(v, a ? a.currency : base())) : ''; };
     $('#tAmt').oninput = hrs; hrs();
     if ($('#tFix')) $('#tFix').onchange = e => $('#tFixOpt').classList.toggle('hidden', !e.target.checked);
@@ -3291,7 +3361,7 @@ function openTxn(t, preset) {
       if (type === 'TRANSFER' && (!t.toAccountId || t.toAccountId === t.accountId)) return toast('اختر حساباً مختلفاً للتحويل');
       const rec = { id: t.id || newId(), type, amount: amt, accountId: t.accountId, toAccountId: type === 'TRANSFER' ? t.toAccountId : null,
         toAmount: type === 'TRANSFER' ? parseAmount(t.toAmount) : null, categoryId: type === 'TRANSFER' ? null : t.categoryId,
-        merchant: t.merchant.trim(), note: t.note.trim(), date: t.date, source: t.source === 'ESTIMATE' ? 'MANUAL' : t.source || 'MANUAL', hash: t.hash || null, fixedId: type === 'EXPENSE' ? t.fixedId || null : null };
+        merchant: t.merchant.trim(), note: t.note.trim(), date: t.date, source: t.source === 'ESTIMATE' ? 'MANUAL' : t.source || 'MANUAL', hash: t.hash || null, fixedId: type === 'EXPENSE' ? t.fixedId || null : null, fav: !!t.fav };
       if (rec.type === 'EXPENSE') linkFixed(rec, isNew, t.makeFixed && { period: t.fixPeriod || 'MONTHLY', auto: !!t.fixAuto });
       const i = db.txns.findIndex(x => x.id === rec.id);
       if (i >= 0) db.txns[i] = rec; else db.txns.push(rec);
@@ -3299,7 +3369,8 @@ function openTxn(t, preset) {
       if (rec.categoryId && rec.merchant) learn(rec.merchant, rec.categoryId);
       save(); closeSheet(); toast('تم الحفظ');
     };
-    if (!isNew) $('#tDup').onclick = () => { readForm(); const c = { ...t, type, id: undefined, date: Date.now(), hash: null, inboxId: null, fixedId: null, source: 'MANUAL' }; closeSheetQuiet(); openTxn(null, c); toast('نسخة جديدة بتاريخ النهارده، عدّل وحفظ'); };
+    if (!isNew) $('#tFav').onclick = () => { const o = db.txns.find(x => x.id === t.id); if (!o) return; o.fav = !o.fav; t.fav = o.fav; save(); $('#tFav').textContent = (o.fav ? '⭐' : '☆') + ' مفضلة'; toast(o.fav ? 'اتضافت للمفضلة' : 'اتشالت من المفضلة'); };
+    if (!isNew) $('#tDup').onclick = () => { readForm(); const c = { ...t, type, id: undefined, date: Date.now(), hash: null, inboxId: null, fixedId: null, source: 'MANUAL', fav: false }; closeSheetQuiet(); openTxn(null, c); toast('نسخة جديدة بتاريخ النهارده، عدّل وحفظ'); };
     if (!isNew) $('#tDel').onclick = () => { if (confirm('حذف هذه الحركة؟')) { db.txns = db.txns.filter(x => x.id !== t.id); save(); closeSheet(); } };
     if (isNew && !t.amount) setTimeout(() => { const el = $('#tAmt'); if (el) el.focus(); }, 250);
   });
