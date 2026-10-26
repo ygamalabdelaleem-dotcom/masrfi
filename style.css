@@ -677,3 +677,5 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .bg-tot small { color: var(--muted); }
 .bg-tot.over { background: color-mix(in srgb, var(--exp) 12%, transparent); }
 .bg-tot.over small { color: var(--exp); font-weight: 700; }
+.bg-sg { display: block; margin-top: 3px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; }
+.bg-sg:active { background: var(--bg); }

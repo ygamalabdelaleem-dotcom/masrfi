@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '65';
+const APP_VERSION = '66';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -746,7 +746,11 @@ function suggestBudgets(rate, lines, excl) {
   const nice = v => v < 100 ? Math.round(v / 10) * 10 : Math.round(v / 50) * 50;
   const out = {}; w.forEach(([c, x]) => out[c.id] = nice(avail * x / tw));
   for (const k in fx) fx[k] = Math.round(fx[k]);
-  return { S, save, fixed, avail, fx, out };
+  // متوسط صرفك الشهري لكل بند من السجل (آخر 3 شهور فيها حركات، ولو مفيش ناخد الشهر ده لحد النهارده)
+  const avg = {}; let nm = 0; const sum = {};
+  for (let o = -3; o <= -1; o++) { const [a, b] = monthRange(o); const m = catTotals(inRange(a, b), 'EXPENSE'); if (Object.keys(m).length) { nm++; for (const k in m) sum[k] = (sum[k] || 0) + m[k]; } }
+  if (nm) for (const k in sum) avg[k] = nice(sum[k] / nm); else for (const k in cur) avg[k] = nice(cur[k]);
+  return { S, save, fixed, avail, fx, out, avg, avgMonths: nm };
 }
 function openBudgetSetup() {
   let rate = db.prefs.savingRate || 20; const lines = monthFixedLines(); const ov = {};
@@ -775,10 +779,11 @@ function openBudgetSetup() {
         <div class="tot"><small>المتاح للصرف</small><b class="num">${money(sug.avail)}</b></div>
       </div>
       <label class="f">٣) المتاح بيتوزع على البنود دي (حسب صرفك)</label>
-      <div class="bg-tot ${varTot - sug.avail > 50 ? 'over' : ''}">مجموع البنود <b class="num">${money(varTot)}</b> من المتاح <b class="num">${money(sug.avail)}</b><br><small>${Math.abs(varTot - sug.avail) < 50 ? 'متوزع كله ✓' : varTot > sug.avail ? `زيادة عن المتاح بـ ${money(varTot - sug.avail)}، قلّل بند` : `فاضل ${money(sug.avail - varTot)} من غير توزيع`}</small></div>
-      <div class="list">${Object.entries(sug.out).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="item bg-fx"><div class="ico">${cat(+k).icon}</div><div class="grow">${esc(lbl(cat(+k).name))}</div><input class="in sm num" data-bv="${k}" inputmode="decimal" value="${ov[k] != null ? ov[k] : v}"><button class="sk-x" data-bx="${k}" aria-label="مسح">✕</button></div>`).join('')}</div>
+      ${Object.keys(sug.avg).length ? `<p class="muted" style="margin:2px 0 6px">تحت كل بند متوسط صرفك ${sug.avgMonths ? `في آخر ${sug.avgMonths} شهور` : 'الشهر ده'}، دوس عليه عشان تاخده.</p><button class="btn block" id="bgAllAvg" style="margin-bottom:6px">📊 خلّي كل البنود زي صرفي</button>` : ''}
+      <div class="bg-tot ${varTot - sug.avail > 100 ? 'over' : ''}">مجموع البنود <b class="num">${money(varTot)}</b> من المتاح <b class="num">${money(sug.avail)}</b><br><small>${Math.abs(varTot - sug.avail) <= 100 ? 'متوزع كله ✓' : varTot > sug.avail ? `زيادة عن المتاح بـ ${money(varTot - sug.avail)}، قلّل بند` : `فاضل ${money(sug.avail - varTot)} من غير توزيع`}</small></div>
+      <div class="list">${Object.entries(sug.out).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="item bg-fx"><div class="ico">${cat(+k).icon}</div><div class="grow">${esc(lbl(cat(+k).name))}${sug.avg[k] ? `<button class="bg-sg" data-sg="${k}">صرفك ≈ ${r0(sug.avg[k])}</button>` : ''}</div><input class="in sm num" data-bv="${k}" inputmode="decimal" value="${ov[k] != null ? ov[k] : v}"><button class="sk-x" data-bx="${k}" aria-label="مسح">✕</button></div>`).join('')}</div>
       <select class="in" id="bgAddV" style="margin-top:6px"><option value="">＋ إضافة بند…</option>${expCats.filter(c => sug.out[c.id] == null && sug.fx[c.id] == null && c.name !== 'cat_installments').map(c => `<option value="${c.id}">${c.icon} ${esc(lbl(c.name))}</option>`).join('')}<option value="new">✏️ بند جديد باسم من عندك</option></select>
-      <div class="bg-tot ${varTot - sug.avail > 50 ? 'over' : ''}">مجموع البنود <b class="num">${money(varTot)}</b> من المتاح <b class="num">${money(sug.avail)}</b><br><small>${Math.abs(varTot - sug.avail) < 50 ? 'متوزع كله ✓' : varTot > sug.avail ? `زيادة عن المتاح بـ ${money(varTot - sug.avail)}، قلّل بند` : `فاضل ${money(sug.avail - varTot)} من غير توزيع`}</small></div>
+      <div class="bg-tot ${varTot - sug.avail > 100 ? 'over' : ''}">مجموع البنود <b class="num">${money(varTot)}</b> من المتاح <b class="num">${money(sug.avail)}</b><br><small>${Math.abs(varTot - sug.avail) <= 100 ? 'متوزع كله ✓' : varTot > sug.avail ? `زيادة عن المتاح بـ ${money(varTot - sug.avail)}، قلّل بند` : `فاضل ${money(sug.avail - varTot)} من غير توزيع`}</small></div>
       <div class="btns"><button class="btn primary" id="bgSave">حفظ الميزانية</button></div>`, () => {
       const re = () => keepScroll(draw);
       document.querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rate = +b.dataset.rt; re(); });
@@ -789,6 +794,8 @@ function openBudgetSetup() {
       document.querySelectorAll('[data-fd]').forEach(el => el.onclick = () => { lines.splice(+el.dataset.fd, 1); re(); });
       $('#bgAdd').onclick = () => { lines.push({ n: '', a: 0, c: (catByName('cat_bills') || expCats[0]).id }); re(); const ins = document.querySelectorAll('[data-fn]'); if (ins.length) ins[ins.length - 1].focus(); };
       document.querySelectorAll('[data-bv]').forEach(el => el.onchange = () => { ov[el.dataset.bv] = parseAmount(el.value) || 0; re(); });
+      document.querySelectorAll('[data-sg]').forEach(el => el.onclick = () => { ov[el.dataset.sg] = sug.avg[el.dataset.sg]; re(); });
+      if ($('#bgAllAvg')) $('#bgAllAvg').onclick = () => { for (const k in sug.out) if (sug.avg[k]) ov[k] = sug.avg[k]; for (const k in sug.avg) if (sug.out[k] == null && sug.fx[k] == null && !excl.has(+k) && cat(+k) && !cat(+k).isIncome) { extra.push(+k); ov[k] = sug.avg[k]; } re(); };
       document.querySelectorAll('[data-bx]').forEach(el => el.onclick = () => { const id = +el.dataset.bx; excl.add(id); delete ov[id]; const i = extra.indexOf(id); if (i >= 0) extra.splice(i, 1); re(); });
       $('#bgAddV').onchange = e => { let id = e.target.value; if (!id) return;
         if (id === 'new') { const nm = (prompt('اسم البند الجديد') || '').trim(); if (!nm) return re();
