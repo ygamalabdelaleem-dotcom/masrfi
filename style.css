@@ -702,3 +702,4 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .tx-btns .btn.primary { flex: 2; }
 .hrs:empty { display: none; }
 .tx-btns .btn { white-space: nowrap; }
+.tx-cat.add { border-style: dashed; color: var(--primary-2); } .tx-cat.add span { font-size: 20px; font-weight: 800; }

@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '71';
+const APP_VERSION = '72';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -3576,7 +3576,7 @@ function openTxn(t, preset) {
     ${isNew && type === 'EXPENSE' ? txnSuggestions() : ''}
     ${type === 'LOAN' ? `<label class="f">${t.lent !== false ? 'سلّفت مين' : 'اتسلفت من مين'}</label><input class="in" id="tMer" value="${esc(t.merchant)}" placeholder="اسم الشخص">` : ''}
     ${type === 'EXPENSE' || type === 'INCOME' ? `<label class="f">التصنيف</label>
-      <div class="tx-cats">${db.categories.filter(c => c.isIncome === (type === 'INCOME')).sort((p, q) => (useCount[q.id] || 0) - (useCount[p.id] || 0)).map(c => `<button type="button" class="tx-cat ${c.id === t.categoryId ? 'on' : ''}" data-cv="${c.id}"><span>${c.icon}</span><small>${esc(lbl(c.name))}</small></button>`).join('')}</div>
+      <div class="tx-cats">${db.categories.filter(c => c.isIncome === (type === 'INCOME')).sort((p, q) => (useCount[q.id] || 0) - (useCount[p.id] || 0)).map(c => `<button type="button" class="tx-cat ${c.id === t.categoryId ? 'on' : ''}" data-cv="${c.id}"><span>${c.icon}</span><small>${esc(lbl(c.name))}</small></button>`).join('')}<button type="button" class="tx-cat add" id="tCatNew"><span>＋</span><small>تصنيف جديد</small></button></div>
       <select class="hidden" id="tCat">${catOptions(type === 'INCOME', t.categoryId)}</select>` : ''}
     <label class="f">${type === 'TRANSFER' ? 'من حساب' : type === 'LOAN' ? (t.lent !== false ? 'اتدفعت من حساب' : 'دخلت على حساب') : type === 'INCOME' ? 'دخلت على' : 'دفعت من'}</label>
     ${accChips('tAcc', t.accountId)}<select class="hidden" id="tAcc">${accOptions(t.accountId)}</select>
@@ -3610,6 +3610,10 @@ function openTxn(t, preset) {
     });
     body.querySelectorAll('[data-ty]').forEach(b => b.onclick = () => { readForm(); type = b.dataset.ty; t.categoryId = null; draw(); });
     body.querySelectorAll('[data-ln]').forEach(b => b.onclick = () => { readForm(); t.lent = b.dataset.ln === '1'; draw(); });
+    if ($('#tCatNew')) $('#tCatNew').onclick = () => { readForm(); const nm = (prompt('اسم التصنيف الجديد') || '').trim(); if (!nm) return;
+      const inc = type === 'INCOME'; let c = db.categories.find(x => x.isIncome === inc && nrm(lbl(x.name)) === nrm(nm));
+      if (!c) { const ico = (prompt('إيموجي للتصنيف (اختياري)', '📦') || '📦').trim().slice(0, 4) || '📦'; c = { id: newId(), name: nm, isIncome: inc, icon: ico, monthlyBudget: 0 }; db.categories.push(c); save(); }
+      t.categoryId = c.id; draw(); toast(`اتضاف تصنيف ${nm}`); };
     body.querySelectorAll('[data-cv]').forEach(b => b.onclick = () => { const on = !b.classList.contains('on'); body.querySelectorAll('[data-cv]').forEach(x => x.classList.remove('on')); b.classList.toggle('on', on); $('#tCat').value = on ? b.dataset.cv : ''; });
     body.querySelectorAll('.tx-acc').forEach(row => row.querySelectorAll('[data-av]').forEach(b => b.onclick = () => { row.querySelectorAll('[data-av]').forEach(x => x.classList.toggle('on', x === b)); $('#' + row.dataset.for).value = b.dataset.av; hrs(); }));
     body.querySelectorAll('[data-dd]').forEach(b => b.onclick = () => { body.querySelectorAll('[data-dd]').forEach(x => x.classList.toggle('on', x === b)); const k = +b.dataset.dd; const di = $('#tDate');
