@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '69';
+const APP_VERSION = '70';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -3556,31 +3556,43 @@ const catOptions = (income, sel) => `<option value="">بدون تصنيف</optio
 
 function openTxn(t, preset) {
   const isNew = !t;
-  t = t || Object.assign({ type: 'EXPENSE', amount: '', accountId: (db.accounts.find(a => !a.archived) || {}).id, categoryId: null, merchant: '', note: '', date: Date.now() }, preset || {});
+  t = t || Object.assign({ type: 'EXPENSE', amount: '', accountId: (acc(db.prefs.lastAcc) && !acc(db.prefs.lastAcc).archived ? db.prefs.lastAcc : (db.accounts.find(a => !a.archived) || {}).id), categoryId: null, merchant: '', note: '', date: Date.now() }, preset || {});
   let type = t.type;
   const fixedOf = () => t.fixedId && db.recurring.find(r => r.id === t.fixedId);
+  // شكل أسهل: المبلغ كبير، التصنيفات أيقونات بدوسة، الحسابات أزرار، والتاريخ النهارده/امبارح. الباقي تحت «تفاصيل أكتر»
+  const useCount = {}; db.txns.forEach(x => { if (x.date > Date.now() - 120 * DAY && x.categoryId) useCount[x.categoryId] = (useCount[x.categoryId] || 0) + 1; });
+  const accChips = (id, sel, filterFn = a => !a.archived) => `<div class="chips tx-acc" data-for="${id}">${db.accounts.filter(a => filterFn(a) || a.id === sel).map(a => `<button type="button" class="chip ${a.id === sel ? 'on' : ''}" data-av="${a.id}">${accIcon(a)} ${esc(lbl(a.name))}</button>`).join('')}</div>`;
+  const dayChip = () => { const d0 = dayStart(Date.now()), d = dayStart(t.date); return d === d0 ? 0 : d === d0 - DAY ? 1 : d === d0 - 2 * DAY ? 2 : -1; };
   const draw = () => sheet(isNew ? 'حركة جديدة' : 'تعديل حركة', `
     <div class="seg"><button data-ty="EXPENSE" class="${type === 'EXPENSE' ? 'on e' : ''}">مصروف</button><button data-ty="INCOME" class="${type === 'INCOME' ? 'on i' : ''}">دخل</button><button data-ty="TRANSFER" class="${type === 'TRANSFER' ? 'on' : ''}">تحويل</button>${isNew ? `<button data-ty="LOAN" class="${type === 'LOAN' ? 'on' : ''}">سلفة</button>` : ''}</div>
     ${type === 'LOAN' ? `<div class="seg" style="margin-top:8px"><button data-ln="1" class="${t.lent !== false ? 'on i' : ''}">📤 سلّفت حد</button><button data-ln="0" class="${t.lent === false ? 'on e' : ''}">📥 اتسلفت من حد</button></div>` : ''}
-    <label class="f">المبلغ</label><input class="in num" id="tAmt" inputmode="decimal" value="${t.amount}" placeholder="0.00" style="font-size:24px;text-align:center">
+    <input class="in num tx-amt ${type === 'INCOME' ? 'inc' : type === 'EXPENSE' ? 'exp' : ''}" id="tAmt" inputmode="decimal" value="${t.amount}" placeholder="0">
     <div id="tHrs" class="muted hrs"></div>
     ${isNew && type === 'EXPENSE' ? txnSuggestions() : ''}
-    <label class="f">${type === 'TRANSFER' ? 'من حساب' : type === 'LOAN' ? (t.lent !== false ? 'اتدفعت من حساب' : 'دخلت على حساب') : 'الحساب'}</label><select class="in" id="tAcc">${accOptions(t.accountId)}</select>
-    ${type === 'TRANSFER' ? `<label class="f">إلى حساب</label><select class="in" id="tTo">${accOptions(t.toAccountId)}</select>
-      <label class="f">المبلغ المستلم (إن كانت العملة مختلفة)</label><input class="in num" id="tToAmt" inputmode="decimal" value="${t.toAmount ?? ''}">`
-      : type === 'LOAN' ? '' : `<label class="f">التصنيف</label><select class="in" id="tCat">${catOptions(type === 'INCOME', t.categoryId)}</select>`}
-    <label class="f">${type === 'LOAN' ? (t.lent !== false ? 'سلّفت مين' : 'اتسلفت من مين') : type === 'INCOME' ? 'المصدر' : 'التاجر / الوصف'}</label><input class="in" id="tMer" value="${esc(t.merchant)}">
-    <label class="f">ملاحظة</label><input class="in" id="tNote" value="${esc(t.note)}">
-    <label class="f">${type === 'LOAN' ? 'تاريخ السلفة' : 'التاريخ'}</label><input class="in" id="tDate" type="datetime-local" value="${toLocalInput(t.date)}">
+    ${type === 'LOAN' ? `<label class="f">${t.lent !== false ? 'سلّفت مين' : 'اتسلفت من مين'}</label><input class="in" id="tMer" value="${esc(t.merchant)}" placeholder="اسم الشخص">` : ''}
+    ${type === 'EXPENSE' || type === 'INCOME' ? `<label class="f">التصنيف</label>
+      <div class="tx-cats">${db.categories.filter(c => c.isIncome === (type === 'INCOME')).sort((p, q) => (useCount[q.id] || 0) - (useCount[p.id] || 0)).map(c => `<button type="button" class="tx-cat ${c.id === t.categoryId ? 'on' : ''}" data-cv="${c.id}"><span>${c.icon}</span><small>${esc(lbl(c.name))}</small></button>`).join('')}</div>
+      <select class="hidden" id="tCat">${catOptions(type === 'INCOME', t.categoryId)}</select>` : ''}
+    <label class="f">${type === 'TRANSFER' ? 'من حساب' : type === 'LOAN' ? (t.lent !== false ? 'اتدفعت من حساب' : 'دخلت على حساب') : type === 'INCOME' ? 'دخلت على' : 'دفعت من'}</label>
+    ${accChips('tAcc', t.accountId)}<select class="hidden" id="tAcc">${accOptions(t.accountId)}</select>
+    ${type === 'TRANSFER' ? `<label class="f">إلى حساب</label>${accChips('tTo', t.toAccountId)}<select class="hidden" id="tTo"><option value="">—</option>${accOptions(t.toAccountId)}</select>` : ''}
+    <label class="f">${type === 'LOAN' ? 'تاريخ السلفة' : 'إمتى'}</label>
+    <div class="chips" id="tDays">${[['0', 'النهارده'], ['1', 'امبارح'], ['2', 'أول امبارح'], ['-1', '📅 يوم تاني']].map(([k, v]) => `<button type="button" class="chip ${String(dayChip()) === k ? 'on' : ''}" data-dd="${k}">${v}</button>`).join('')}</div>
+    <input class="in ${dayChip() === -1 ? '' : 'hidden'}" id="tDate" type="datetime-local" value="${toLocalInput(t.date)}" style="margin-top:6px">
     ${type === 'LOAN' ? `<label class="f">تاريخ الاستحقاق</label><input class="in" id="tDue" type="date" value="${t.dueDate ? fmtDate(t.dueDate) : ''}">
       <div class="insight" style="margin-top:10px">${t.lent !== false ? 'يوم الاستحقاق هفكّرك، ولما تأكد بدوسة يتسجل استلام الفلوس على نفس الحساب.' : 'يوم الاستحقاق هفكّرك، ولما تأكد بدوسة يتسجل السداد مصروف من نفس الحساب.'}</div>` : ''}
-    ${type === 'EXPENSE' ? (fixedOf() ? `<div class="insight" style="margin-top:12px">📌 مصروف ثابت: ${esc(fixedOf().merchant || '')} (${PERIODS[fixedOf().period]})</div>` : `
-    <label class="row" style="margin-top:12px"><input type="checkbox" id="tFix" ${t.makeFixed ? 'checked' : ''}> مصروف ثابت (يدخل في التوقعات والتنبيهات)</label>
-    <div id="tFixOpt" class="${t.makeFixed ? '' : 'hidden'}" style="margin-top:8px">
-      <div class="seg">${['DAILY', 'WEEKLY', 'MONTHLY'].map(k => `<button data-fp="${k}" class="${(t.fixPeriod || 'MONTHLY') === k ? 'on' : ''}">${PERIODS[k]}</button>`).join('')}</div>
-      <label class="row" style="margin-top:8px"><input type="checkbox" id="tFixAuto" ${t.fixAuto ? 'checked' : ''}> سجّله تلقائياً في معاده</label>
-    </div>`) : ''}
-    <div class="btns"><button class="btn primary" id="tSave">حفظ</button>${isNew ? '' : '<button class="btn" id="tFav">' + (t.fav ? '⭐' : '☆') + ' مفضلة</button><button class="btn" id="tDup">⧉ تكرار</button><button class="btn danger" id="tDel">حذف</button>'}</div>`, body => {
+    <details class="tx-more" ${!isNew && (t.merchant || t.note) && type !== 'LOAN' ? 'open' : ''}><summary>تفاصيل أكتر (اختياري)</summary>
+      ${type === 'LOAN' ? '' : `<label class="f">${type === 'INCOME' ? 'المصدر' : 'المحل / الوصف'}</label><input class="in" id="tMer" value="${esc(t.merchant)}">`}
+      <label class="f">ملاحظة</label><input class="in" id="tNote" value="${esc(t.note)}">
+      ${type === 'TRANSFER' ? `<label class="f">المبلغ المستلم (لو العملة مختلفة)</label><input class="in num" id="tToAmt" inputmode="decimal" value="${t.toAmount ?? ''}">` : ''}
+      ${type === 'EXPENSE' ? (fixedOf() ? `<div class="insight" style="margin-top:12px">📌 مصروف ثابت: ${esc(fixedOf().merchant || '')} (${PERIODS[fixedOf().period]})</div>` : `
+      <label class="row" style="margin-top:12px"><input type="checkbox" id="tFix" ${t.makeFixed ? 'checked' : ''}> مصروف ثابت (يدخل في التوقعات والتنبيهات)</label>
+      <div id="tFixOpt" class="${t.makeFixed ? '' : 'hidden'}" style="margin-top:8px">
+        <div class="seg">${['DAILY', 'WEEKLY', 'MONTHLY'].map(k => `<button data-fp="${k}" class="${(t.fixPeriod || 'MONTHLY') === k ? 'on' : ''}">${PERIODS[k]}</button>`).join('')}</div>
+        <label class="row" style="margin-top:8px"><input type="checkbox" id="tFixAuto" ${t.fixAuto ? 'checked' : ''}> سجّله تلقائياً في معاده</label>
+      </div>`) : ''}
+    </details>
+    <div class="btns tx-btns"><button class="btn primary" id="tSave">حفظ</button>${isNew ? '<button class="btn" id="tSaveMore">حفظ و＋ تاني</button>' : '<button class="btn" id="tFav">' + (t.fav ? '⭐' : '☆') + ' مفضلة</button><button class="btn" id="tDup">⧉ تكرار</button><button class="btn danger" id="tDel">حذف</button>'}</div>`, body => {
     const hrs = () => { const v = parseAmount($('#tAmt').value); const a = acc(+$('#tAcc').value); $('#tHrs').textContent = type === 'EXPENSE' && v ? '⏱️ = ' + workTime(conv(v, a ? a.currency : base())) : ''; };
     $('#tAmt').oninput = hrs; hrs();
     if ($('#tFix')) $('#tFix').onchange = e => $('#tFixOpt').classList.toggle('hidden', !e.target.checked);
@@ -3593,8 +3605,12 @@ function openTxn(t, preset) {
     });
     body.querySelectorAll('[data-ty]').forEach(b => b.onclick = () => { readForm(); type = b.dataset.ty; t.categoryId = null; draw(); });
     body.querySelectorAll('[data-ln]').forEach(b => b.onclick = () => { readForm(); t.lent = b.dataset.ln === '1'; draw(); });
+    body.querySelectorAll('[data-cv]').forEach(b => b.onclick = () => { const on = !b.classList.contains('on'); body.querySelectorAll('[data-cv]').forEach(x => x.classList.remove('on')); b.classList.toggle('on', on); $('#tCat').value = on ? b.dataset.cv : ''; });
+    body.querySelectorAll('.tx-acc').forEach(row => row.querySelectorAll('[data-av]').forEach(b => b.onclick = () => { row.querySelectorAll('[data-av]').forEach(x => x.classList.toggle('on', x === b)); $('#' + row.dataset.for).value = b.dataset.av; hrs(); }));
+    body.querySelectorAll('[data-dd]').forEach(b => b.onclick = () => { body.querySelectorAll('[data-dd]').forEach(x => x.classList.toggle('on', x === b)); const k = +b.dataset.dd; const di = $('#tDate');
+      if (k < 0) { di.classList.remove('hidden'); di.focus(); return; } di.classList.add('hidden'); const n = new Date(); di.value = toLocalInput(n.getTime() - k * DAY); });
     const mer = $('#tMer');
-    mer.onblur = () => { const c = $('#tCat'); if (c && !c.value && mer.value.trim()) { const s = suggestCategory(mer.value, type === 'INCOME' ? 'CREDIT' : 'DEBIT'); if (s && cat(s) && cat(s).isIncome === (type === 'INCOME')) c.value = s; } };
+    if (mer) mer.onblur = () => { const c = $('#tCat'); if (c && !c.value && mer.value.trim()) { const s = suggestCategory(mer.value, type === 'INCOME' ? 'CREDIT' : 'DEBIT'); if (s && cat(s) && cat(s).isIncome === (type === 'INCOME')) c.value = s; } };
     $('#tSave').onclick = () => {
       readForm();
       const amt = parseAmount(t.amount);
@@ -3612,15 +3628,18 @@ function openTxn(t, preset) {
       if (i >= 0) db.txns[i] = rec; else db.txns.push(rec);
       if (t.inboxId) { const m = db.inbox.find(x => x.id === t.inboxId); if (m) m.status = 'ACCEPTED'; const a = acc(rec.accountId); if (m && m.parsed.last4 && a && !a.last4) a.last4 = m.parsed.last4; }
       if (rec.categoryId && rec.merchant) learn(rec.merchant, rec.categoryId);
+      db.prefs.lastAcc = rec.accountId;
       save(); closeSheet(); toast('تم الحفظ');
+      if (t.again) openTxn(null, { type, accountId: rec.accountId, date: rec.date });
     };
+    if ($('#tSaveMore')) $('#tSaveMore').onclick = () => { t.again = true; $('#tSave').onclick(); t.again = false; };
     if (!isNew) $('#tFav').onclick = () => { const o = db.txns.find(x => x.id === t.id); if (!o) return; o.fav = !o.fav; t.fav = o.fav; save(); $('#tFav').textContent = (o.fav ? '⭐' : '☆') + ' مفضلة'; toast(o.fav ? 'اتضافت للمفضلة' : 'اتشالت من المفضلة'); };
     if (!isNew) $('#tDup').onclick = () => { readForm(); const c = { ...t, type, id: undefined, date: Date.now(), hash: null, inboxId: null, fixedId: null, source: 'MANUAL', fav: false }; closeSheetQuiet(); openTxn(null, c); toast('نسخة جديدة بتاريخ النهارده، عدّل وحفظ'); };
     if (!isNew) $('#tDel').onclick = () => { if (confirm('حذف هذه الحركة؟')) { db.txns = db.txns.filter(x => x.id !== t.id); save(); closeSheet(); } };
     if (isNew && !t.amount) setTimeout(() => { const el = $('#tAmt'); if (el) el.focus(); }, 250);
   });
   function readForm() {
-    t.amount = $('#tAmt').value; t.accountId = +$('#tAcc').value; t.merchant = $('#tMer').value; t.note = $('#tNote').value;
+    t.amount = $('#tAmt').value; t.accountId = +$('#tAcc').value; t.merchant = $('#tMer') ? $('#tMer').value : t.merchant; t.note = $('#tNote').value;
     const d = new Date($('#tDate').value).getTime(); if (isFinite(d)) t.date = d;
     if ($('#tCat')) t.categoryId = +$('#tCat').value || null;
     if ($('#tTo')) { t.toAccountId = +$('#tTo').value; t.toAmount = $('#tToAmt').value; }
