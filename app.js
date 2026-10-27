@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '70';
+const APP_VERSION = '71';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -118,13 +118,18 @@ const AUTO_BK = 'mywallet.autobk';
 const autoBks = () => { try { return JSON.parse(localStorage.getItem(AUTO_BK) || '[]'); } catch (e) { return []; } };
 function autoBackup(force) {
   try {
-    const list = autoBks(); const today = new Date().toISOString().slice(0, 10);
-    if (!force && list[0] && list[0].day === today) return;
+    // اليوم بيتخزن في مفتاح صغير، عشان كل حفظ مايقراش كل النسخ القديمة (ده كان بيهنّج الموبايل لما البيانات تكبر)
+    const today = new Date().toISOString().slice(0, 10);
+    if (!force && localStorage.getItem(AUTO_BK + '.day') === today) return;
+    const list = autoBks();
+    if (!force && list[0] && list[0].day === today) { localStorage.setItem(AUTO_BK + '.day', today); return; }
     if (!db.txns || db.txns.length < 1) return;
+    localStorage.setItem(AUTO_BK + '.day', today);
     const clean = { ...db, prefs: { ...db.prefs } }; ['gmKey', 'azKey', 'azRegion', 'pinHash', 'bioCred'].forEach(k => delete clean.prefs[k]); delete clean.chat;
     const rest = list.filter(x => x.day !== today);
+    const cur = { day: today, ts: Date.now(), n: db.txns.length, data: JSON.stringify(clean) };
     for (let n = Math.min(6, rest.length); n >= 0; n--) {
-      try { localStorage.setItem(AUTO_BK, JSON.stringify([{ day: today, ts: Date.now(), n: db.txns.length, data: JSON.stringify(clean) }, ...rest.slice(0, n)])); return; } catch (e) { }
+      try { localStorage.setItem(AUTO_BK, JSON.stringify([cur, ...rest.slice(0, n)])); return; } catch (e) { }
     }
   } catch (e) { }
 }
