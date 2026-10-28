@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '74';
+const APP_VERSION = '75';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -495,6 +495,7 @@ function bindTxRows(root) {
 
 const insH = (i, h, w) => `<div class="insight ${w ? 'w' : ''}"><span class="ib">${ic(i)}</span><div class="grow">${h}</div></div>`;
 function renderHome() {
+  if (hasProfile()) syncEarlySalary();
   const bal = balances();
   const total = db.accounts.filter(a => !a.archived).reduce((s, a) => s + conv(bal[a.id] || 0, a.currency), 0);
   const [f, to] = monthRange(0);
@@ -563,6 +564,7 @@ function renderHome() {
       </button>`).join('')}<button class="acc-card add" id="hAcc">${ic('plus')}<span>إدارة الحسابات</span></button></div>
     </section>
     <div class="card tiles">${tiles.map(([k, i, t, b]) => `<button data-q="${k}"><span class="ti">${ic(i)}</span><span>${t}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</div>
+    ${earlyPayCard()}
     ${loanDueCard(hide)}
     ${riskCard(hide)}
     ${usualCard()}
@@ -590,6 +592,8 @@ function renderHome() {
   if ($('#hUsual')) $('#hUsual').onclick = () => { const r = fillUsual([Date.now()]); toast(`اتسجّل ${money(r.total)} تقديري`); render(); };
   if ($('#hNone')) $('#hNone').onclick = () => { noSpend().push(dayKey(Date.now())); save(); render(); };
   bindUsualCard(); bindLoanCard(view());
+  if ($('#hEarly')) $('#hEarly').onclick = () => { const p = prof(); openTxn(null, Object.assign({ type: 'INCOME', amount: p.salary, categoryId: (catByName('cat_salary') || {}).id || null, merchant: 'المرتب', date: Date.now() }, p.accountId && acc(p.accountId) ? { accountId: p.accountId } : {})); };
+  if ($('#hEarlyNo')) $('#hEarlyNo').onclick = () => { db.prefs.earlyAskOff = schedCycle().next; save(); renderHome(); };
   const qa = { exp: () => openTxn(null, { type: 'EXPENSE' }), inc: () => openTxn(null, { type: 'INCOME' }), tr: () => openTxn(null, { type: 'TRANSFER' }), sms: () => setTab('inbox'),
     cards: () => setTab('cards'), savings: () => setTab('savings'), ctrl: () => setTab('ctrl'), voice: openVoice };
   const hS = $('#hSpend'); if (hS) hS.onclick = () => openSpend();
@@ -1744,12 +1748,35 @@ const dayStart = ms => new Date(ms).setHours(0, 0, 0, 0);
 const LIQUID = new Set(['BANK', 'CASH', 'WALLET']);
 function payDate(y, m) { return new Date(y, m, Math.min(prof().payday || 1, new Date(y, m + 1, 0).getDate())).getTime(); }
 // آخر يوم قبض (النهارده أو قبله) والقبض الجاي (بعد النهارده)
-function payCycle() {
+function schedCycle() {
   const t0 = dayStart(Date.now()); const n = new Date(t0);
   let last = payDate(n.getFullYear(), n.getMonth());
   if (last > t0) last = payDate(n.getFullYear(), n.getMonth() - 1);
-  const ld = new Date(last); const next = payDate(ld.getFullYear(), ld.getMonth() + 1);
-  return { last, next, days: Math.round((next - last) / DAY), left: Math.max(1, Math.round((next - t0) / DAY)) };
+  const ld = new Date(last); return { last, next: payDate(ld.getFullYear(), ld.getMonth() + 1) };
+}
+// المرتب لو نزل بدري (لحد 12 يوم قبل ميعاده) واتسجل كدخل، الدورة الجديدة تبدأ من يوم نزوله
+function earlySalary() {
+  const { next } = schedCycle(); const S = prof().salary || 0; const sc = catByName('cat_salary');
+  return db.txns.filter(t => t.type === 'INCOME' && t.date >= next - 12 * DAY && t.date < next && t.date <= Date.now()
+    && ((sc && t.categoryId === sc.id) || /مرتب|راتب/.test(t.merchant || '') || (S > 0 && t.amount >= S * 0.7))).sort((p, q) => p.date - q.date)[0] || null;
+}
+function payCycle() {
+  const t0 = dayStart(Date.now()); let { last, next } = schedCycle();
+  const e = earlySalary(); if (e) { const nd = new Date(next); last = dayStart(e.date); next = payDate(nd.getFullYear(), nd.getMonth() + 1); }
+  return { last, next, days: Math.round((next - last) / DAY), left: Math.max(1, Math.round((next - t0) / DAY)), early: !!e };
+}
+// لو المرتب نزل بدري، المرتب التلقائي مايتسجلش تاني في ميعاده
+function syncEarlySalary() {
+  const e = earlySalary(); if (!e) return; const { next } = schedCycle(); const sr = db.recurring.find(r => r.profileSalary && r.active);
+  if (sr && sr.nextDate <= next + DAY && sr.nextDate > e.date - DAY) { let g = 0; while (sr.nextDate <= next + DAY && g++ < 3) sr.nextDate = advance(sr); save(); }
+}
+// كارت «المرتب نزل بدري؟» في آخر 10 أيام قبل القبض
+function earlyPayCard() {
+  if (!hasProfile() || !(prof().salary > 0) || earlySalary()) return '';
+  const { next } = schedCycle(); const left = Math.round((next - dayStart(Date.now())) / DAY);
+  if (left < 1 || left > 10 || db.prefs.earlyAskOff === next) return '';
+  return `<div class="card reminder"><div class="row"><span class="ib">💰</span><div class="grow"><b>المرتب نزل بدري؟</b><div class="muted">ميعاده بعد ${left} يوم. لو نزل سجّله وهبدأ الشهر الجديد من النهارده.</div></div></div>
+    <div class="btns" style="margin:8px 0 0"><button class="btn small primary" id="hEarly">💰 نزل، سجّله</button><button class="btn small" id="hEarlyNo">لسه</button></div></div>`;
 }
 // قيمة ساعة الشغل من المرتب
 function hourRate() {
