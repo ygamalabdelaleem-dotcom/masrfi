@@ -703,3 +703,4 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .hrs:empty { display: none; }
 .tx-btns .btn { white-space: nowrap; }
 .tx-cat.add { border-style: dashed; color: var(--primary-2); } .tx-cat.add span { font-size: 20px; font-weight: 800; }
+.pill.exp { background: color-mix(in srgb, var(--exp) 14%, transparent); color: var(--exp); } .pill.inc { background: color-mix(in srgb, var(--inc) 14%, transparent); color: var(--inc); }

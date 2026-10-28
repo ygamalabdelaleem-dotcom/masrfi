@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '72';
+const APP_VERSION = '73';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -998,8 +998,8 @@ function renderMore() {
       ['bank', 'الحسابات', 'بنوك، نقدي، توفير، ذهب', openAccounts],
       ['card', 'بطاقات الائتمان والتقسيط', 'الحد المستخدم، مواعيد السداد، جدول الأقساط', () => setTab('cards')],
       ['coins', 'الادخار', 'قاعدة 50/30/20، صندوق الطوارئ، خطة الأهداف', () => setTab('savings')],
-      ['target', 'الأهداف', 'أهداف الادخار', openGoals],
-      ['users', 'الديون والقروض', 'أقرضت / اقترضت وسداد جزئي', openDebts]]],
+      ['users', 'السلف', 'سلّفت واتسلفت، السداد والمواعيد', () => openDebts()],
+      ['target', 'الأهداف', 'أهداف الادخار', openGoals]]],
     ['التنظيم', [
       ['mail', 'رسائل البنك', 'لصق أو استيراد الرسائل وربطها تلقائياً', () => setTab('inbox')],
       ['tag', 'التصنيفات والميزانيات', 'ميزانية كل تصنيف ونوعه (احتياج/رغبة)', openCategories],
@@ -2443,7 +2443,7 @@ function openPositions() {
     </table></div>
     <p class="muted">صافي الرصيد = الرصيد الحالي، زائد الديون اللي ليك، ناقص الديون اللي عليك وباقي أصل التقسيط زي ما البنك كاتبه (من غير فوايد الشهور الجاية). ده مركزك الحقيقي لو سددت كل حاجة النهارده.</p>
     <div class="btns"><button class="btn" id="posDebts">${ic('users')} الديون</button><button class="btn" id="posCards">${ic('card')} الأقساط</button></div>`, () => {
-    $('#posDebts').onclick = openDebts; $('#posCards').onclick = () => { closeSheet(); setTab('cards'); };
+    $('#posDebts').onclick = () => openDebts(); $('#posCards').onclick = () => { closeSheet(); setTab('cards'); };
   });
 }
 
@@ -3186,11 +3186,11 @@ function voiceActions(raw) {
   let m = /(?:^|\s)(?:سلفت|اسلفت|قرضت|اقرضت|ادنت)\s+(.+)$/.exec(t);
   if (m) { const who = person(m[1].replace(/\d+(\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim()); if (who) {
     const dd = { id: newId(), person: who, amount: amt, paid: 0, currency: base(), lent: true, date, dueDate: vdue, note: 'بالصوت' }; db.debts.push(dd);
-    const r = debtMove(true, -1, who, `سلفة لـ ${who}`); dd.accountId = r.a ? r.a.id : null; return done(`سجّلت إنك سلّفت ${who} ${r0(amt)}${r.a ? ` من ${lbl(r.a.name)}` : ''}${vdue ? `، ويرجّعها ${dueWord(vdue)}` : ''}`, r.id || []); } }
+    const r = debtMove(true, -1, who, `سلفة لـ ${who}`); dd.accountId = r.a ? r.a.id : null; { const tx = r.id && db.txns.find(x => x.id === r.id); if (tx) tx.debtId = dd.id; } return done(`سجّلت إنك سلّفت ${who} ${r0(amt)}${r.a ? ` من ${lbl(r.a.name)}` : ''}${vdue ? `، ويرجّعها ${dueWord(vdue)}` : ''}`, r.id || []); } }
   m = /(?:^|\s)(?:استلفت|اتسلفت|اقترضت|استدنت)\s+(?:من\s+)?(.+)$/.exec(t);
   if (m) { const who = person(m[1].replace(/\d+(\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim()); if (who) {
     const dd = { id: newId(), person: who, amount: amt, paid: 0, currency: base(), lent: false, date, dueDate: vdue, note: 'بالصوت' }; db.debts.push(dd);
-    const r = debtMove(false, 1, who, `سلفة من ${who}`); dd.accountId = r.a ? r.a.id : null; return done(`سجّلت إنك استلفت من ${who} ${r0(amt)}${r.a ? ` في ${lbl(r.a.name)}` : ''}${vdue ? `، وميعاد السداد ${dueWord(vdue)}` : ''}`, r.id || []); } }
+    const r = debtMove(false, 1, who, `سلفة من ${who}`); dd.accountId = r.a ? r.a.id : null; { const tx = r.id && db.txns.find(x => x.id === r.id); if (tx) tx.debtId = dd.id; } return done(`سجّلت إنك استلفت من ${who} ${r0(amt)}${r.a ? ` في ${lbl(r.a.name)}` : ''}${vdue ? `، وميعاد السداد ${dueWord(vdue)}` : ''}`, r.id || []); } }
   m = /^(.+?)\s+(?:سدد|سددلي|رجع|رجعلي|رجعلى|دفعلي|ادالي|اداني|رد)(?:\s|$)/.exec(t.replace(/\d+(\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim());
   if (m) { const d = findDebt(person(m[1]), true); if (d) { const pay = Math.min(amt, d.amount - d.paid); d.paid += pay;
     const r = debtMove(true, 1, d.person, `${d.person} سدد`); return done(`${d.person} سدد ${r0(pay)}، فاضل عليه ${r0(d.amount - d.paid)}`, r.id || []); } }
@@ -3905,11 +3905,8 @@ function newLoan(o) {
 }
 const dueLoans = () => { const e = dayStart(Date.now()) + DAY - 1; return db.debts.filter(d => d.dueDate && d.dueDate <= e && d.paid < d.amount); };
 function settleLoan(d) {
-  const left = d.amount - d.paid; const a = acc(d.accountId) || db.accounts.find(x => !x.archived && x.type === 'CASH') || db.accounts.find(x => !x.archived);
-  if (!a || !(left > 0)) return;
-  let c = null; if (!d.lent) { c = db.categories.find(x => !x.isIncome && x.name === 'سداد سلف'); if (!c) { c = { id: newId(), name: 'سداد سلف', isIncome: false, icon: '🤝', monthlyBudget: 0 }; db.categories.push(c); } }
-  db.txns.push({ id: newId(), type: d.lent ? 'INCOME' : 'EXPENSE', amount: left, accountId: a.id, categoryId: c ? c.id : null, merchant: d.lent ? `${d.person} رجّع السلفة` : `سداد سلفة لـ ${d.person}`, note: 'سلفة مستحقة', date: Date.now(), source: 'MANUAL', debtId: d.id });
-  d.paid = d.amount; save(); toast(d.lent ? `اتسجل إن ${d.person} رجّع ${r0(left)}` : `اتسجل سداد ${r0(left)} لـ ${d.person}`); render();
+  const p = payLoan(d, d.amount - d.paid, Date.now(), d.accountId); if (!p) return;
+  save(); toast(d.lent ? `اتسجل إن ${d.person} رجّع ${r0(p)}` : `اتسجل سداد ${r0(p)} لـ ${d.person}`); render();
 }
 function loanDueCard(hide) {
   const L = dueLoans(); if (!L.length) return '';
@@ -3923,52 +3920,91 @@ function bindLoanCard(root) {
   root.querySelectorAll('[data-ls]').forEach(b => b.onclick = () => { const d = db.debts.find(x => x.id === +b.dataset.ls); if (!d) return; d.dueDate = dayStart(Date.now()) + 7 * DAY + 9 * 3600e3; save(); render(); toast('اتأجلت أسبوع'); });
   root.querySelectorAll('[data-le]').forEach(b => b.onclick = () => editDebt(db.debts.find(x => x.id === +b.dataset.le)));
 }
-function openDebts() {
-  sheet('الديون والقروض', `<div class="list">${db.debts.length ? db.debts.map(d => { const rem = d.amount - d.paid;
-    return `<div class="item" data-d="${d.id}"><div class="ico">${d.lent ? '📤' : '📥'}</div><div class="grow"><div class="ellipsis">${esc(d.person)} <span class="muted">${d.lent ? 'يدين لي' : 'أدين له'}</span></div>
-    <div class="muted">${d.dueDate ? 'الاستحقاق ' + ltr(fmtDate(d.dueDate)) : ltr(fmtDate(d.date))}${rem <= 0 ? ' · ✅ مسدد' : ''}</div><div class="bar"><i style="width:${Math.min(100, d.paid / d.amount * 100)}%"></i></div></div>
-    <div class="num ${d.lent ? 'inc' : 'exp'}">${money(rem)} <small class="muted">${d.currency}</small></div></div>`; }).join('') : '<div class="empty">لا توجد ديون</div>'}</div>
-    <button class="btn primary block" id="dNew" style="margin-top:10px">＋ دين جديد</button>`, () => {
+// صفحة السلف: كل سلفة بحالتها، وتسجيل سداد/تحصيل كامل أو جزئي في أي وقت (قبل أو بعد الاستحقاق)
+const loanState = d => d.paid >= d.amount ? 'done' : d.dueDate && dayStart(d.dueDate) < dayStart(Date.now()) ? 'late' : 'open';
+const LOAN_ST = { open: ['مفتوحة', ''], late: ['متأخرة', 'exp'], done: ['مسددة ✓', 'inc'] };
+let debtTab = 'open';
+function openDebts(tabK) {
+  if (tabK) debtTab = tabK;
+  const rem = d => conv(Math.max(0, d.amount - d.paid), d.currency);
+  const mine = db.debts.filter(d => d.lent).reduce((a, d) => a + rem(d), 0), onMe = db.debts.filter(d => !d.lent).reduce((a, d) => a + rem(d), 0);
+  const list = db.debts.filter(d => debtTab === 'all' || (debtTab === 'open' ? loanState(d) !== 'done' : loanState(d) === debtTab))
+    .sort((p, q) => (p.dueDate || 9e15) - (q.dueDate || 9e15) || q.date - p.date);
+  const cnt = k => db.debts.filter(d => k === 'all' || (k === 'open' ? loanState(d) !== 'done' : loanState(d) === k)).length;
+  sheet('🤝 السلف', `
+    <div class="mm-sum"><div><small>ليّا عند الناس</small><span class="num mm-a">${money(mine)}</span></div><div><small>عليّا للناس</small><span class="num mm-l">${money(onMe)}</span></div><div><small>الصافي</small><span class="num">${money(mine - onMe)}</span></div></div>
+    <div class="btns" style="margin:10px 0"><button class="btn" id="dNewL">📤 سلّفت حد</button><button class="btn" id="dNewB">📥 اتسلفت من حد</button></div>
+    <div class="chips">${[['open', 'مفتوحة'], ['late', 'متأخرة'], ['done', 'مسددة'], ['all', 'الكل']].map(([k, v]) => `<button class="chip ${debtTab === k ? 'on' : ''}" data-dt="${k}">${v} (${cnt(k)})</button>`).join('')}</div>
+    <div class="list" style="margin-top:8px">${list.length ? list.map(d => { const r = d.amount - d.paid; const st = loanState(d); const a = acc(d.accountId);
+      return `<div class="item" data-d="${d.id}"><div class="ico">${d.lent ? '📤' : '📥'}</div><div class="grow"><div class="ellipsis"><b>${esc(d.person)}</b> <span class="muted">${d.lent ? 'سلّفته' : 'اتسلفت منه'}</span> <span class="pill ${LOAN_ST[st][1]}">${LOAN_ST[st][0]}</span></div>
+        <div class="muted" style="font-size:12px">${ltr(fmtDate(d.date))}${d.dueDate ? ' ← استحقاق ' + ltr(fmtDate(d.dueDate)) : ''}${a ? ' · ' + esc(lbl(a.name)) : ''}</div>
+        <div class="bar ${st === 'late' ? 'over' : ''}"><i style="width:${Math.min(100, d.paid / d.amount * 100)}%"></i></div>
+        <div class="muted" style="font-size:12px">اتسدد ${money(d.paid)} من ${money(d.amount)}</div></div>
+        <div class="num ${d.lent ? 'inc' : 'exp'}" style="text-align:left">${money(Math.max(0, r))}<br><small class="muted">${r > 0 ? 'باقي' : ''}</small></div></div>`; }).join('') : '<div class="empty">مفيش سلف هنا</div>'}</div>`, () => {
+    document.querySelectorAll('[data-dt]').forEach(b => b.onclick = () => openDebts(b.dataset.dt));
     document.querySelectorAll('[data-d]').forEach(el => el.onclick = () => editDebt(db.debts.find(d => d.id === +el.dataset.d)));
-    $('#dNew').onclick = () => editDebt();
+    $('#dNewL').onclick = () => { closeSheetQuiet(); openTxn(null, { type: 'LOAN', lent: true }); };
+    $('#dNewB').onclick = () => { closeSheetQuiet(); openTxn(null, { type: 'LOAN', lent: false }); };
   });
 }
+// تسجيل دفعة سلفة على حساب: لو اتسلفت يبقى مصروف «سداد سلف»، ولو سلّفت يبقى دخل
+function payLoan(d, amount, date, accId) {
+  const pay = Math.min(amount, d.amount - d.paid); if (!(pay > 0)) return 0;
+  const a = acc(accId) || acc(d.accountId) || db.accounts.find(x => !x.archived && x.type === 'CASH') || db.accounts.find(x => !x.archived);
+  let c = null; if (!d.lent) { c = db.categories.find(x => !x.isIncome && x.name === 'سداد سلف'); if (!c) { c = { id: newId(), name: 'سداد سلف', isIncome: false, icon: '🤝', monthlyBudget: 0 }; db.categories.push(c); } }
+  if (a) db.txns.push({ id: newId(), type: d.lent ? 'INCOME' : 'EXPENSE', amount: pay, accountId: a.id, categoryId: c ? c.id : null, merchant: d.lent ? `${d.person} رجّع من السلفة` : `سداد سلفة لـ ${d.person}`, note: pay < d.amount - d.paid ? 'سداد جزئي' : 'سداد السلفة', date: date || Date.now(), source: 'MANUAL', debtId: d.id });
+  d.paid += pay; return pay;
+}
 function editDebt(d) {
-  const isNew = !d; d = d || { person: '', amount: '', paid: 0, currency: base(), lent: true, date: Date.now(), dueDate: null, note: '' };
-  sheet(isNew ? 'دين جديد' : d.person, `
-    <div class="seg"><button data-l="1" class="${d.lent ? 'on i' : ''}">أقرضت</button><button data-l="0" class="${!d.lent ? 'on e' : ''}">اقترضت</button></div>
-    <label class="f">الشخص</label><input class="in" id="dP" value="${esc(d.person)}">
-    <label class="f">المبلغ</label><input class="in num" id="dA" inputmode="decimal" value="${d.amount}">
-    <label class="f">العملة</label><select class="in" id="dC">${CURRENCIES.map(c => `<option ${d.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
-    <label class="f">الحساب (يتسجل عليه السداد يوم الاستحقاق)</label><select class="in" id="dAccM"><option value="">الكاش</option>${accOptions(d.accountId, a => LIQUID.has(a.type))}</select>
-    <label class="f">تاريخ الاستحقاق (اختياري)</label><input class="in" type="date" id="dDue" value="${d.dueDate ? fmtDate(d.dueDate) : ''}">
-    <label class="f">ملاحظة</label><input class="in" id="dN" value="${esc(d.note)}">
-    ${isNew ? '' : `<div class="insight" style="margin-top:12px">المسدد: <b class="num">${money(d.paid)}</b> من <b class="num">${money(d.amount)}</b>
-      <label class="f">تسجيل دفعة</label><input class="in num" id="dPay" inputmode="decimal" placeholder="المبلغ">
-      <label class="f">تسجيلها أيضاً في حساب (نفس العملة)</label><select class="in" id="dAcc"><option value="">لا</option>${accOptions(null, a => a.currency === d.currency)}</select>
-      <button class="btn small primary" id="dPayGo" style="margin-top:8px">تسجيل الدفعة</button></div>`}
-    <div class="btns"><button class="btn primary" id="dSave">حفظ</button>${isNew ? '' : '<button class="btn danger" id="dDel">حذف</button>'}</div>`, body => {
+  if (!d) return openTxn(null, { type: 'LOAN' });
+  const left = d.amount - d.paid; const st = loanState(d);
+  const moves = db.txns.filter(x => x.debtId === d.id).sort((p, q) => q.date - p.date);
+  sheet(`${d.lent ? '📤' : '📥'} ${d.person}`, `
+    <div class="mm-sum"><div><small>${d.lent ? 'سلّفته' : 'اتسلفت'}</small><span class="num">${money(d.amount)}</span></div><div><small>${d.lent ? 'رجّع' : 'سددت'}</small><span class="num mm-a">${money(d.paid)}</span></div><div><small>الباقي</small><span class="num ${d.lent ? 'inc' : 'exp'}">${money(Math.max(0, left))}</span></div></div>
+    <div class="row between" style="margin-top:8px"><span class="pill ${LOAN_ST[st][1]}">${LOAN_ST[st][0]}</span><span class="muted">${d.dueDate ? 'الاستحقاق ' + ltr(fmtDate(d.dueDate)) : 'من غير ميعاد'}</span></div>
+    ${left > 0 ? `<div class="card" style="margin:12px 0;padding:12px">
+      <b>${d.lent ? 'تسجيل تحصيل' : 'تسجيل سداد'}</b> <span class="muted">(في أي وقت، كامل أو جزء)</span>
+      <div class="row" style="gap:8px;margin-top:8px"><input class="in num grow" id="dPay" inputmode="decimal" value="${left}"><button class="btn small" id="dFull">الكل</button></div>
+      <label class="f">${d.lent ? 'دخلت على' : 'اتدفعت من'}</label><select class="in" id="dAcc">${accOptions(d.accountId || (db.accounts.find(a => !a.archived && a.type === 'CASH') || {}).id, a => LIQUID.has(a.type))}</select>
+      <label class="f">التاريخ</label><input class="in" type="date" id="dPayDate" value="${fmtDate(Date.now())}">
+      <button class="btn primary block" id="dPayGo" style="margin-top:10px">✓ ${d.lent ? 'استلمت' : 'سددت'}</button></div>` : ''}
+    <details class="tx-more"><summary>تعديل بيانات السلفة</summary>
+      <div class="seg"><button data-l="1" class="${d.lent ? 'on i' : ''}">سلّفت</button><button data-l="0" class="${!d.lent ? 'on e' : ''}">اتسلفت</button></div>
+      <label class="f">الشخص</label><input class="in" id="dP" value="${esc(d.person)}">
+      <label class="f">المبلغ</label><input class="in num" id="dA" inputmode="decimal" value="${d.amount}">
+      <label class="f">العملة</label><select class="in" id="dC">${CURRENCIES.map(c => `<option ${d.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+      <label class="f">الحساب</label><select class="in" id="dAccM"><option value="">الكاش</option>${accOptions(d.accountId, a => LIQUID.has(a.type))}</select>
+      <label class="f">تاريخ السلفة</label><input class="in" type="date" id="dDate" value="${fmtDate(d.date || Date.now())}">
+      <label class="f">تاريخ الاستحقاق</label><input class="in" type="date" id="dDue" value="${d.dueDate ? fmtDate(d.dueDate) : ''}">
+      <label class="f">ملاحظة</label><input class="in" id="dN" value="${esc(d.note || '')}">
+      <div class="btns"><button class="btn primary" id="dSave">حفظ التعديل</button><button class="btn danger" id="dDel">حذف السلفة</button></div>
+    </details>
+    ${moves.length ? `<h3 style="margin-top:14px">الحركات</h3><div class="list mm-list">${moves.map(mmRow).join('')}</div>` : ''}
+    <button class="btn block" id="dBack" style="margin-top:12px">‹ كل السلف</button>`, body => {
     let lent = d.lent;
     body.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { lent = b.dataset.l === '1'; body.querySelectorAll('[data-l]').forEach(x => { x.className = ''; }); b.className = 'on ' + (lent ? 'i' : 'e'); });
+    body.querySelectorAll('.mm-tx[data-tx]').forEach(x => x.classList.add('item')); bindTxRows(body);
+    $('#dBack').onclick = () => openDebts();
+    if ($('#dFull')) $('#dFull').onclick = () => { $('#dPay').value = left; };
+    if ($('#dPayGo')) $('#dPayGo').onclick = () => {
+      const v = parseAmount($('#dPay').value) || 0; if (!(v > 0)) return toast('اكتب المبلغ');
+      const dt = $('#dPayDate').value ? new Date($('#dPayDate').value + 'T' + new Date().toTimeString().slice(0, 5)).getTime() : Date.now();
+      const p = payLoan(d, v, dt, +$('#dAcc').value); save();
+      toast(d.paid >= d.amount ? `اتقفلت سلفة ${d.person} ✓` : `اتسجل ${r0(p)}، باقي ${r0(d.amount - d.paid)}`); editDebt(d);
+    };
     $('#dSave').onclick = () => {
       const amt = parseAmount($('#dA').value); const p = $('#dP').value.trim();
-      if (!p || !(amt > 0)) return toast('أدخل الاسم والمبلغ');
-      const due = $('#dDue').value ? new Date($('#dDue').value + 'T09:00').getTime() : null;
-      const rec = { ...d, id: d.id || newId(), person: p, amount: amt, currency: $('#dC').value, lent, dueDate: due, accountId: +$('#dAccM').value || null, note: $('#dN').value.trim() };
-      const i = db.debts.findIndex(x => x.id === rec.id); if (i >= 0) db.debts[i] = rec; else db.debts.push(rec);
-      save(); openDebts();
+      if (!p || !(amt > 0)) return toast('اكتب الاسم والمبلغ');
+      Object.assign(d, { person: p, amount: amt, currency: $('#dC').value, lent, accountId: +$('#dAccM').value || null,
+        date: $('#dDate').value ? new Date($('#dDate').value + 'T09:00').getTime() : d.date, dueDate: $('#dDue').value ? new Date($('#dDue').value + 'T09:00').getTime() : null, note: $('#dN').value.trim() });
+      // حركة السلفة الأصلية تتظبط معاها
+      const first = db.txns.find(x => x.debtId === d.id && x.type === 'ADJUST') || db.txns.find(x => !x.debtId && x.type === 'ADJUST' && x.amount === d.amount && (x.merchant === `سلفة لـ ${d.person}` || x.merchant === `سلفة من ${d.person}`)); if (first) Object.assign(first, { amount: amt, dir: lent ? -1 : 1, accountId: d.accountId || first.accountId, date: d.date, merchant: lent ? `سلفة لـ ${p}` : `سلفة من ${p}` });
+      save(); toast('اتحفظ'); editDebt(d);
     };
-    if (!isNew) {
-      $('#dDel').onclick = () => { if (confirm('حذف؟')) { db.debts = db.debts.filter(x => x.id !== d.id); save(); openDebts(); } };
-      $('#dPayGo').onclick = () => {
-        const pay = Math.min(parseAmount($('#dPay').value) || 0, d.amount - d.paid);
-        if (!(pay > 0)) return toast('أدخل مبلغ الدفعة');
-        d.paid += pay;
-        const aId = +$('#dAcc').value;
-        if (aId) db.txns.push({ id: newId(), type: d.lent ? 'INCOME' : 'EXPENSE', amount: pay, accountId: aId, categoryId: null, merchant: d.person, note: 'سداد دين', date: Date.now(), source: 'MANUAL' });
-        save(); toast('تم تسجيل الدفعة'); openDebts();
-      };
-    }
+    $('#dDel').onclick = () => { if (!confirm(`تمسح سلفة ${d.person}؟`)) return;
+      const linked = db.txns.filter(x => x.debtId === d.id);
+      if (linked.length && confirm(`تمسح كمان الحركات بتاعتها (${linked.length}) عشان رصيد الحساب يرجع زي ما كان؟`)) db.txns = db.txns.filter(x => x.debtId !== d.id);
+      db.debts = db.debts.filter(x => x.id !== d.id); save(); openDebts(); };
   });
 }
 
