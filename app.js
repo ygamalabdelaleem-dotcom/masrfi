@@ -2,7 +2,7 @@
 /* محفظتي — نسخة الويب (PWA) للآيفون. كل البيانات محفوظة على الجهاز فقط (localStorage). */
 
 const KEY = 'mywallet.v1';
-const APP_VERSION = '73';
+const APP_VERSION = '74';
 // تحديث إجباري: يمسح الكاش ويعيد تحميل آخر نسخة من الموقع (البيانات مش بتتمسح)
 async function forceUpdate() {
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); const r = await navigator.serviceWorker?.getRegistration(); if (r) await r.update(); } catch (e) { }
@@ -624,6 +624,19 @@ function txFiltered(f, to) {
 }
 const ioOf = list => { let i = 0, e = 0; list.forEach(t => { const v = conv(t.amount, txCur(t)); if (t.type === 'INCOME') i += v; else if (t.type === 'EXPENSE') e += v; }); return [i, e]; };
 const mo = v => money(v).replace(/\.00$/, '');
+// الرصيد بعد كل حركة: لو فيه فلتر على حساب يبقى رصيد الحساب ده بس، وإلا إجمالي الحسابات زي الرئيسية
+let rbMap = null;
+function runBalances(accId) {
+  const live = new Set(db.accounts.filter(a => !a.archived || a.id === accId).map(a => a.id)); const inScope = id => accId ? id === accId : live.has(id);
+  const cv = (v, id) => accId ? v : conv(v, (acc(id) || {}).currency || base());
+  let b = accId ? (+(acc(accId) || {}).initialBalance || 0) : db.accounts.filter(a => !a.archived).reduce((s0, a) => s0 + conv(+a.initialBalance || 0, a.currency), 0);
+  const m = new Map();
+  [...db.txns].sort((p, q) => p.date - q.date || p.id - q.id).forEach(t => {
+    if (inScope(t.accountId)) b += cv(t.type === 'INCOME' ? t.amount : t.type === 'ADJUST' ? (t.dir || 1) * t.amount : -t.amount, t.accountId);
+    if (t.type === 'TRANSFER' && t.toAccountId != null && inScope(t.toAccountId)) b += cv(t.toAmount ?? t.amount, t.toAccountId);
+    m.set(t.id, b); });
+  return m;
+}
 // سطر الحركة: التصنيف على الجنب، والوصف والحساب في النص، والمبلغ
 function mmRow(t) {
   const a = acc(t.accountId); const c = cat(t.categoryId); const cur = a ? a.currency : base();
@@ -634,7 +647,7 @@ function mmRow(t) {
   if (!main) { main = c ? esc(lbl(c.name)) : ''; }
   return `<div class="mm-tx" data-tx="${t.id}"><div class="mm-tx-c">${catTxt}${t.fav ? ' ⭐' : ''}</div>
     <div class="mm-tx-m"><b class="ellipsis">${main}${t.source === 'ESTIMATE' ? ' <span class="pill">تقديري</span>' : ''}</b>${sub ? `<small class="ellipsis">${sub}</small>` : ''}</div>
-    <div class="num ${cls}">${money(t.amount)}${cur !== base() ? ` <small>${cur}</small>` : ''}</div></div>`;
+    <div class="mm-amt"><div class="num ${cls}">${money(t.amount)}${cur !== base() ? ` <small>${cur}</small>` : ''}</div>${rbMap && rbMap.has(t.id) ? `<small class="mm-rb num">رصيد ${mo(rbMap.get(t.id))}</small>` : ''}</div></div>`;
 }
 function dayGroups(list) {
   const g = new Map(); list.forEach(t => { const k = dayStart(t.date); if (!g.has(k)) g.set(k, []); g.get(k).push(t); });
@@ -649,7 +662,8 @@ function renderTxns() {
   const title = m === 'monthly' ? String(yr) : new Date(f).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
   const fl = [filter.type && { EXPENSE: 'مصروف', INCOME: 'دخل', TRANSFER: 'تحويل' }[filter.type], filter.accountId && acc(filter.accountId) && lbl(acc(filter.accountId).name), filter.categoryId && cat(filter.categoryId) && lbl(cat(filter.categoryId).name)].filter(Boolean);
   let body = '';
-  if (m === 'daily') body = list.length ? dayGroups(list.slice(0, 400)) : '<div class="empty">مفيش حركات في الشهر ده</div>';
+  if (m === 'daily') { rbMap = runBalances(filter.accountId && acc(filter.accountId) ? filter.accountId : 0); const ra = acc(filter.accountId);
+    body = list.length ? `<div class="muted rb-note">الرصيد جنب كل حركة: ${ra ? 'رصيد ' + esc(lbl(ra.name)) + ' بس' : 'إجمالي كل الحسابات'}</div>` + dayGroups(list.slice(0, 400)) : '<div class="empty">مفيش حركات في الشهر ده</div>'; rbMap = null; }
   else if (m === 'calendar') {
     const d0 = new Date(f); const first = new Date(d0.getFullYear(), d0.getMonth(), 1).getDay(); const days = new Date(d0.getFullYear(), d0.getMonth() + 1, 0).getDate();
     const cells = []; for (let i = 0; i < first; i++) cells.push('<div class="cal-c empty"></div>');

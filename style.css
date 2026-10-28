@@ -704,3 +704,7 @@ body.privacy #view, body.privacy .top, body.privacy #sheet, body.privacy #chat {
 .tx-btns .btn { white-space: nowrap; }
 .tx-cat.add { border-style: dashed; color: var(--primary-2); } .tx-cat.add span { font-size: 20px; font-weight: 800; }
 .pill.exp { background: color-mix(in srgb, var(--exp) 14%, transparent); color: var(--exp); } .pill.inc { background: color-mix(in srgb, var(--inc) 14%, transparent); color: var(--inc); }
+.mm-amt { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; text-align: left; }
+.mm-rb { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.rb-note { font-size: 12px; padding: 6px 12px 0; }
+.mm-tx .mm-rb.num { font-size: 11px; font-weight: 500; color: var(--muted); }
